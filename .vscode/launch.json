@@ -1,0 +1,34 @@
+{
+  // F5 loads the extension from this repo in a second window, so testing a
+  // change needs no copy into .tools/aichatrender/extension and no reinstall.
+  // The install script stays the way the extension reaches the normal window.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        // The installed build shares this extension's ID; without this, both
+        // are live in the dev window and which one registered a command is
+        // anyone's guess. Costs every other extension in that window too.
+        "--disable-extensions"
+        // No folder argument. The dev host opens as a second remote window, and
+        // a plain path is resolved against the *local* machine, so in a dev
+        // container it is silently dropped and the window opens empty — which
+        // the panel reports as "supports exactly one local workspace folder".
+        // Opening a container path would need --folder-uri with the
+        // vscode-remote authority, which is not derivable inside the container.
+        // So on the first F5, use File > Open Folder in the dev window; VS Code
+        // restores that folder on subsequent launches.
+        //
+        // Open a DIFFERENT project than this one. VS Code will not open a
+        // folder that is already open in another window — it just focuses that
+        // window — so picking this repo bounces you back to where you started.
+        // The panel follows whatever transcripts the opened workspace has, so
+        // any project with a Claude or Codex session is a fine test subject.
+      ]
+    }
+  ]
+}

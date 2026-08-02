@@ -13,6 +13,7 @@ const {
   LIMITS,
   mungePath,
   LineBuffer,
+  turnPreview,
   parseLine: parseClaudeLine,
 } = require('./transcript');
 const {
@@ -35,6 +36,7 @@ const NO_SESSION = 'No Claude Code or Codex CLI session found for this workspace
 let panel; // singleton WebviewPanel
 let webviewReady = false;
 let follower; // transcript-follow state while the panel is open
+let pendingGoto; // message key to scroll to once the webview reports ready
 
 function activate(context) {
   context.subscriptions.push(
@@ -42,6 +44,7 @@ function activate(context) {
     vscode.commands.registerCommand('aichatrender.followActiveChat', () =>
       followActiveChat(context),
     ),
+    vscode.commands.registerCommand('aichatrender.browseTurns', () => browseTurns(context)),
   );
 }
 
@@ -70,6 +73,7 @@ function show(context, preserveFocus = false, preserveColumn = false) {
       if (m && m.type === 'ready') {
         webviewReady = true;
         sendHistory();
+        if (pendingGoto !== undefined) postGoto(pendingGoto);
       }
     },
     undefined,
@@ -79,6 +83,7 @@ function show(context, preserveFocus = false, preserveColumn = false) {
     () => {
       panel = undefined;
       webviewReady = false;
+      pendingGoto = undefined;
       stopFollower();
     },
     undefined,
@@ -185,6 +190,56 @@ async function pickCandidate(candidates) {
   });
 }
 
+// ---------------------------------------------------------------- turn picker
+
+// Lists the user prompts among the messages the panel currently holds, newest
+// first, and scrolls the panel to the one picked. Scope is deliberately what is
+// rendered: the picker can never offer a turn the panel cannot show.
+async function browseTurns(context) {
+  show(context, true, true);
+  const messages = (follower && follower.messages) || [];
+  const items = [];
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    if (m.role !== 'user') continue;
+    items.push({
+      label: turnPreview(m.spans) || '(empty prompt)',
+      description: tsDisplay(m.ts),
+      key: m.key,
+    });
+  }
+  if (!items.length) {
+    vscode.window.showInformationMessage(
+      follower && follower.status
+        ? `AIChatRender: ${follower.status}`
+        : 'AIChatRender: no user turns in the chat currently being followed.',
+    );
+    return;
+  }
+  // Number the turns oldest-to-newest so the labels match the panel's index.
+  const total = items.length;
+  items.forEach((item, idx) => {
+    item.label = `${total - idx}. ${item.label}`;
+  });
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: 'Select a turn to scroll the panel to',
+    matchOnDescription: true,
+  });
+  if (!picked) return;
+  postGoto(picked.key);
+}
+
+function postGoto(key) {
+  if (!panel) return;
+  if (!webviewReady) {
+    pendingGoto = key;
+    return;
+  }
+  pendingGoto = undefined;
+  panel.reveal(undefined, true);
+  panel.webview.postMessage({ type: 'gotoMessage', key });
+}
+
 function buildHtml(context, webview) {
   const mediaUri = (...p) =>
     webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', ...p)).toString();
@@ -231,6 +286,10 @@ function startFollower() {
     lastSize: 0,
     lineBuf: new LineBuffer(),
     messages: [],
+    // Monotonic per-message key. The turn picker and the webview address
+    // messages by key, so trimming to MAX_MESSAGES (or a rebuild) while the
+    // picker is open cannot make a selection land on a different message.
+    nextKey: 1,
     unexpected: false,
     status: NO_SESSION,
     timer: setInterval(discover, DISCOVERY_MS),
@@ -518,7 +577,10 @@ function readRange(fd, from, to) {
         ? parseCodexLine(line, opts)
         : parseClaudeLine(line, opts);
     if (r.unexpected) follower.unexpected = true;
-    for (const m of r.messages) follower.messages.push(m);
+    for (const m of r.messages) {
+      m.key = follower.nextKey++;
+      follower.messages.push(m);
+    }
   }
   if (follower.messages.length > LIMITS.MAX_MESSAGES) {
     follower.messages = follower.messages.slice(-LIMITS.MAX_MESSAGES);
@@ -549,7 +611,12 @@ function sendHistory() {
   panel.webview.postMessage({
     type: 'replaceHistory',
     entries: f
-      ? f.messages.map((m) => ({ role: m.role, tsDisplay: tsDisplay(m.ts), spans: m.spans }))
+      ? f.messages.map((m) => ({
+          key: m.key,
+          role: m.role,
+          tsDisplay: tsDisplay(m.ts),
+          spans: m.spans,
+        }))
       : [],
     status: f ? f.status : '',
     notice:

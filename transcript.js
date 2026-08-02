@@ -12,6 +12,7 @@ const LIMITS = {
   MAX_PARTIAL: 512 * 1024, // bytes; partial-line buffer cap (discard + resync)
   MAX_MESSAGES: 50, // messages retained in the panel
   MAX_REBUILD_BYTES: 4 * 1024 * 1024, // tail read on whole-file rebuild
+  TURN_PREVIEW: 80, // UTF-16 units of a user prompt shown in the turn picker
 };
 
 // Claude Code's project-directory munge: every non-alphanumeric character of the
@@ -199,6 +200,48 @@ function blockToSpans(text) {
   return out;
 }
 
+// One-line preview of a message, for the turn picker. Math spans keep their
+// source (delimiters restored, so `$x$` reads as math rather than a bare x),
+// runs of whitespace collapse to single spaces, and the result is capped with
+// an ellipsis. Returns '' for a message with nothing but blank text.
+//
+// The cap counts UTF-16 units, not code points: it exists to bound how wide the
+// label renders, and wide characters (emoji, CJK) occupy roughly two units and
+// about two columns, so units track rendered width better than code points do.
+// Hence `maxUnits`, and "about 80 characters" in the docs.
+function turnPreview(spans, maxUnits = LIMITS.TURN_PREVIEW) {
+  const list = Array.isArray(spans) ? spans : [];
+  let out = '';
+  let more = false;
+  for (let i = 0; i < list.length; i += 1) {
+    const sp = list[i];
+    if (!sp || typeof sp.s !== 'string') continue;
+    // Collapse as we accumulate, so the cap is measured against what will
+    // actually be shown. Stopping on raw length instead would discard a whole
+    // prompt sitting behind a long run of blank lines.
+    out = (out + (sp.t === 'math' ? `$${sp.s}$` : sp.s)).replace(/\s+/g, ' ');
+    if (out.length > maxUnits) {
+      // The cap can be crossed by trailing whitespace that trim() then removes,
+      // leaving a string back under it. Record whether anything visible is left
+      // unread, so a truncated prompt is never presented as a complete one.
+      more = list
+        .slice(i + 1)
+        .some((rest) => rest && typeof rest.s === 'string' && rest.s.trim() !== '');
+      break;
+    }
+  }
+  out = out.trim();
+  if (out.length <= maxUnits) return more ? `${out}…` : out;
+  let cut = out.slice(0, maxUnits);
+  // slice() counts UTF-16 units: cutting between an astral character's
+  // surrogates would render the half as U+FFFD, so drop a trailing lone high
+  // surrogate. (Multi-codepoint clusters — ZWJ emoji, flags — can still split,
+  // which loses a glyph rather than showing a replacement character.)
+  const lastUnit = cut.charCodeAt(cut.length - 1);
+  if (lastUnit >= 0xd800 && lastUnit <= 0xdbff) cut = cut.slice(0, -1);
+  return `${cut.trimEnd()}…`;
+}
+
 function makeMessage(rec, role, text) {
   return {
     ts: typeof rec.timestamp === 'string' ? rec.timestamp : '',
@@ -253,4 +296,12 @@ function parseLine(line, opts) {
   return none; // other record types are bookkeeping
 }
 
-module.exports = { LIMITS, mungePath, LineBuffer, segment, blockToSpans, parseLine };
+module.exports = {
+  LIMITS,
+  mungePath,
+  LineBuffer,
+  segment,
+  blockToSpans,
+  turnPreview,
+  parseLine,
+};
