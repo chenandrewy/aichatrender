@@ -4,11 +4,13 @@ fixtures/**
 
 # Editor and VCS noise.
 .vscode/**
+dev/**
 .gitignore
 **/*.map
 
 # Repository furniture, not part of the published extension.
 .github/**
+scripts/**
 CITATION.cff
 CONTRIBUTING.md
 
