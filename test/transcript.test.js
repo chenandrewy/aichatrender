@@ -4,7 +4,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { LIMITS, mungePath, LineBuffer, segment, blockToSpans, parseLine } = require('../transcript');
+const {
+  LIMITS,
+  mungePath,
+  LineBuffer,
+  segment,
+  blockToSpans,
+  turnPreview,
+  parseLine,
+} = require('../transcript');
 
 const OPTS = { includeUser: true };
 
@@ -269,4 +277,67 @@ test('fixture: synthetic session parses to the expected conversation', () => {
     { t: 'math', m: 'inline', s: 'p_1=p_2' },
     { t: 'text', s: ' costs $5 to check.' },
   ]);
+});
+
+test('turnPreview: collapses whitespace and keeps math source', () => {
+  assert.equal(
+    turnPreview([
+      { t: 'text', s: '  check that\n\n' },
+      { t: 'math', m: 'inline', s: 'x^2' },
+      { t: 'text', s: '\tis right  ' },
+    ]),
+    'check that $x^2$ is right',
+  );
+});
+
+test('turnPreview: caps at the limit with an ellipsis', () => {
+  const preview = turnPreview([{ t: 'text', s: 'a'.repeat(500) }]);
+  assert.equal(preview.length, LIMITS.TURN_PREVIEW + 1);
+  assert.equal(preview.slice(-1), '…');
+  assert.equal(turnPreview([{ t: 'text', s: 'ab cd' }], 4), 'ab c…');
+  assert.equal(turnPreview([{ t: 'text', s: 'ab cd' }], 3), 'ab…'); // trailing space trimmed
+  assert.equal(turnPreview([{ t: 'text', s: 'ab cd' }], 5), 'ab cd'); // exactly at the cap
+});
+
+test('turnPreview: survives blank and malformed spans', () => {
+  assert.equal(turnPreview([{ t: 'text', s: '   \n ' }]), '');
+  assert.equal(turnPreview([]), '');
+  assert.equal(turnPreview(undefined), '');
+  assert.equal(turnPreview([null, { t: 'text' }, { t: 'text', s: 'ok' }]), 'ok');
+});
+
+test('turnPreview: content behind a long run of blank lines survives', () => {
+  // The whitespace collapses to nothing, so a cap measured on raw length would
+  // stop scanning before reaching the math and report an empty prompt.
+  assert.equal(
+    turnPreview([
+      { t: 'text', s: ' \n'.repeat(81) },
+      { t: 'math', m: 'inline', s: 'x^2' },
+    ]),
+    '$x^2$',
+  );
+});
+
+test('turnPreview: truncation never splits a surrogate pair', () => {
+  const preview = turnPreview([{ t: 'text', s: `${'a'.repeat(79)}😀 tail` }]);
+  assert.equal(preview, `${'a'.repeat(79)}…`);
+  assert.ok(!/[\uD800-\uDFFF]/.test(preview));
+  // A pair that fits entirely is kept intact.
+  assert.equal(turnPreview([{ t: 'text', s: '😀😀😀' }], 4), '😀😀…');
+});
+
+test('turnPreview: content past a trailing separator still marks truncation', () => {
+  // The cap is crossed by whitespace that trim() removes, so the result fits
+  // under it — but the math and the words after it were never read.
+  const preview = turnPreview([
+    { t: 'text', s: `${'a'.repeat(80)} ` },
+    { t: 'math', m: 'inline', s: 'x' },
+    { t: 'text', s: ' continues' },
+  ]);
+  assert.equal(preview, `${'a'.repeat(80)}…`);
+  // Trailing blank spans are not content: no ellipsis for them.
+  assert.equal(
+    turnPreview([{ t: 'text', s: `${'a'.repeat(80)} ` }, { t: 'text', s: '  \n ' }]),
+    'a'.repeat(80),
+  );
 });

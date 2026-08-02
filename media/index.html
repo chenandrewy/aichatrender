@@ -37,6 +37,16 @@
     padding: 0.6em 0.8em;
     opacity: 0.85;
   }
+  @keyframes aicr-flash {
+    from { background: var(--vscode-editor-findMatchHighlightBackground, rgba(255, 200, 0, 0.45)); }
+    to { background: transparent; }
+  }
+  article.flash {
+    animation: aicr-flash 1.4s ease-out 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    article.flash { animation-duration: 0.01s; }
+  }
   article header {
     font-size: 0.85em;
     opacity: 0.65;
@@ -148,6 +158,7 @@
   function validEntry(e) {
     return !!e && typeof e === 'object'
       && (e.role === 'assistant' || e.role === 'user')
+      && typeof e.key === 'number'
       && typeof e.tsDisplay === 'string'
       && Array.isArray(e.spans) && e.spans.every(validSpan);
   }
@@ -251,6 +262,7 @@
       if (!validEntry(e)) continue;
       var art = document.createElement('article');
       art.className = e.role;
+      art.dataset.key = String(e.key);
       if (e.role === 'user') {
         turnNumber++;
         art.id = 'user-turn-' + turnNumber;
@@ -274,16 +286,38 @@
     if (atBottom) window.scrollTo(0, document.body.scrollHeight);
   }
 
+  function flash(target) {
+    target.classList.remove('flash');
+    void target.offsetWidth; // restart the animation on a repeat jump
+    target.classList.add('flash');
+  }
+
   turnIndexEl.addEventListener('click', function (ev) {
     var button = ev.target.closest('button[data-target]');
     if (!button || !turnIndexEl.contains(button)) return;
     var target = document.getElementById(button.dataset.target);
-    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      flash(target);
+    }
   });
+
+  // Scroll to the message the turn picker chose. Keys are assigned by the
+  // extension and are stable across re-renders; a key that has since scrolled
+  // out of the retained window simply finds nothing.
+  function gotoMessage(key) {
+    if (typeof key !== 'number' || !isFinite(key)) return;
+    var target = log.querySelector('article[data-key="' + String(key) + '"]');
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    flash(target);
+  }
 
   window.addEventListener('message', function (ev) {
     var m = ev.data;
-    if (m && m.type === 'replaceHistory') render(m);
+    if (!m) return;
+    if (m.type === 'replaceHistory') render(m);
+    else if (m.type === 'gotoMessage') gotoMessage(m.key);
   });
   vscodeApi.postMessage({ type: 'ready' });
 })();

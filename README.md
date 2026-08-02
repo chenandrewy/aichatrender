@@ -20,6 +20,12 @@ a terminal is unreadable, and copying an equation out of one is worse.
   held open by your active terminal's process tree. If the terminal can't be
   matched — an idle CLI often closes its transcript — a picker lists the
   workspace's recent chats.
+- **AIChatRender: Browse Turns and Pick** opens a searchable list of the user
+  prompts in the chat being followed, newest first, each shown as its first 80
+  characters or so (the cap bounds rendered width, so wide characters count
+  double). Picking one scrolls the panel to that turn and flashes it. The
+  list covers the messages the panel currently holds, so it never offers a turn
+  the panel cannot show.
 - **Renders math** with a vendored, pinned KaTeX: `$$…$$` and `\[…\]` display,
   `\(…\)` and `$…$` inline. Single-`$` uses Pandoc-style guards so currency and
   `$VAR` don't trigger false positives.
@@ -77,6 +83,7 @@ which is exactly what this panel is trying not to be.
 | --- | --- |
 | `AIChatRender: Show Panel` | Open the panel, following the newest transcript. |
 | `AIChatRender: Follow Active Terminal Chat` | Pin to the active terminal's chat. |
+| `AIChatRender: Browse Turns and Pick` | List the chat's user prompts and scroll to one. |
 
 ## Known limitations
 

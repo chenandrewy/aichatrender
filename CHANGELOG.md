@@ -5,6 +5,19 @@ All notable changes to AIChatRender are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **AIChatRender: Browse Turns and Pick** (`aichatrender.browseTurns`): a quick
+  pick listing the user prompts of the chat being followed, newest first, with
+  each prompt previewed to about its first 80 characters and its timestamp as the
+  filterable description. Choosing one reveals the panel, scrolls that turn into
+  view, and flashes it. Scope is the messages the panel currently retains.
+- Messages now carry a monotonic key, sent to the webview and used to address
+  the scroll target, so trimming to `MAX_MESSAGES` or a whole-file rebuild
+  while the picker is open cannot land the jump on a different message.
+
 ## [0.4.0] — 2026-08-01
 
 ### Added
