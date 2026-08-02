@@ -1,0 +1,33 @@
+name: test
+
+# The macOS job is the point of this workflow. Active-terminal detection uses
+# pgrep/lsof/ps on macOS and /proc on Linux, so only a real macOS runner
+# exercises that half of active-terminal.js.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test test/*.test.js
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Catches manifest and .vscodeignore breakage before a publish does.
+      - run: npx --yes @vscode/vsce package --allow-missing-repository

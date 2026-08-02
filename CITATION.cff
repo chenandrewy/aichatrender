@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+title: "AIChatRender: rendered math for AI coding-agent transcripts in VS Code"
+message: "If AIChatRender is useful in academic work, a citation is appreciated but not required by the MIT license."
+type: software
+authors:
+  - family-names: Chen
+    given-names: Andrew Y.
+license: MIT
+version: 0.4.0
+date-released: "2026-08-02"

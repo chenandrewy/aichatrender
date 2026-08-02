@@ -1,0 +1,16 @@
+# Tests and their sample transcripts are not needed at runtime.
+test/**
+fixtures/**
+
+# Editor and VCS noise.
+.vscode/**
+.gitignore
+**/*.map
+
+# Repository furniture, not part of the published extension.
+.github/**
+CITATION.cff
+CONTRIBUTING.md
+
+# NOTE: media/katex/** is deliberately NOT ignored. The vendored KaTeX build is
+# what renders the math, and its LICENSE must ship with it (MIT attribution).

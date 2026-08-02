@@ -1,0 +1,47 @@
+{
+  "name": "aichatrender",
+  "displayName": "AIChatRender",
+  "description": "Render Claude Code or Codex CLI session math live from transcripts (read-only, no network).",
+  "version": "0.4.0",
+  "publisher": "chenandrewy",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "math",
+    "katex",
+    "latex",
+    "claude code",
+    "codex"
+  ],
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "main": "./extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "onCommand:aichatrender.show",
+    "onCommand:aichatrender.followActiveChat"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "aichatrender.show",
+        "title": "AIChatRender: Show Panel"
+      },
+      {
+        "command": "aichatrender.followActiveChat",
+        "title": "AIChatRender: Follow Active Terminal Chat"
+      }
+    ]
+  }
+}

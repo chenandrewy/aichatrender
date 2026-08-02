@@ -1,0 +1,5 @@
+# vsce build artifacts; the extension is packaged from source on demand
+*.vsix
+
+node_modules/
+.DS_Store
