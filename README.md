@@ -32,7 +32,8 @@ a terminal is unreadable, and copying an equation out of one is worse.
   `\(…\)` and `$…$` inline. Single-`$` uses Pandoc-style guards so currency and
   `$VAR` don't trigger false positives.
 - **Copies equations as LaTeX source**, including when a selection mixes prose
-  and formulas, via KaTeX's `copy-tex`.
+  and formulas, via KaTeX's `copy-tex`. **Tables copy back as pipe syntax**,
+  alignment and math cells intact, so a paste re-renders as a table.
 - **A deliberately small Markdown subset**: headings, lists, blockquotes, rules,
   bold/italic, inline and fenced code, and `| a | b |` tables (with column
   alignment and math inside cells). Raw HTML and Markdown links stay inert

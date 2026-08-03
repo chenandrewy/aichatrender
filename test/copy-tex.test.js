@@ -39,3 +39,20 @@ test('copy-tex: webview loads it after KaTeX and before AIChatRender rendering',
     /\.replaceAll\('\{\{copyTexJs\}\}', mediaUri\('katex', 'copy-tex\.min\.js'\)\)/,
   );
 });
+
+// The table serialiser must win over copy-tex for selections holding a table,
+// and stay out of the way otherwise. copy-tex listens on the bubble phase, so
+// ours has to be registered with capture and must bail before preventDefault
+// when the fragment has no table in it.
+test('copy-tex: the table copy handler captures and defers when there is no table', () => {
+  const html = fs.readFileSync(path.join(EXTENSION_DIR, 'media', 'index.html'), 'utf8');
+  const handler = html.slice(html.indexOf("addEventListener('copy'"));
+  assert.ok(handler.startsWith("addEventListener('copy'"), 'copy handler present');
+  const body = handler.slice(0, handler.indexOf('}, true);') + '}, true);'.length);
+  assert.match(body, /}, true\);$/, 'registered on the capture phase');
+  assert.ok(
+    body.indexOf("querySelector('table')") < body.indexOf('preventDefault'),
+    'bails on table-free selections before taking over the clipboard',
+  );
+  assert.match(body, /stopImmediatePropagation/);
+});

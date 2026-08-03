@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   both Claude Code and Codex emit; Pandoc's grid and simple table syntaxes are
   not recognised and stay plain text.
 
+- Copying a selection that contains a table puts pipe syntax on the clipboard
+  rather than the browser's tab-separated flattening, with column alignment
+  preserved and math cells written as their LaTeX source — the same round-trip
+  KaTeX's `copy-tex` already gave equations. Selections without a table are
+  untouched and still go through `copy-tex`.
+
 ### Fixed
 
 - Codex rollouts started in a *subdirectory* of the workspace folder are now

@@ -273,5 +273,82 @@
     return blocks;
   }
 
-  return { parse: parse };
+  // --- clipboard -----------------------------------------------------------
+  // Render extracted cell strings back to pipe syntax. Kept here, away from the
+  // DOM walk in index.html, so the fiddly padding and escaping stay testable.
+
+  function escapeCell(text) {
+    return String(text == null ? '' : text)
+      .replace(/\s*\n\s*/g, ' ')
+      .replace(/\|/g, '\\|')
+      .trim();
+  }
+
+  function displayWidth(text) {
+    // Astral characters (emoji) occupy one column for our padding purposes.
+    return Array.from(text).length;
+  }
+
+  function padCell(text, width) {
+    var pad = width - displayWidth(text);
+    return pad > 0 ? text + new Array(pad + 1).join(' ') : text;
+  }
+
+  function delimiterCell(align, width) {
+    if (align === 'center') return ':' + new Array(width - 1).join('-') + ':';
+    if (align === 'right') return new Array(width).join('-') + ':';
+    if (align === 'left') return ':' + new Array(width).join('-');
+    return new Array(width + 1).join('-');
+  }
+
+  function pipeRow(cells) {
+    return '| ' + cells.join(' | ') + ' |';
+  }
+
+  // header may be null for a partial selection that missed the header row; the
+  // delimiter row is then omitted rather than promoting a body row to a header.
+  function formatTable(header, rows, align) {
+    var body = [];
+    var i, j;
+    for (i = 0; i < rows.length; i++) {
+      var row = [];
+      for (j = 0; j < rows[i].length; j++) row.push(escapeCell(rows[i][j]));
+      body.push(row);
+    }
+    var head = header ? header.map(escapeCell) : null;
+
+    var width = head ? head.length : 0;
+    for (i = 0; i < body.length; i++) width = Math.max(width, body[i].length);
+    if (!width) return '';
+
+    var widths = [];
+    for (j = 0; j < width; j++) {
+      var max = 3; // a delimiter cell needs room for `:-:`
+      if (head && head[j]) max = Math.max(max, displayWidth(head[j]));
+      for (i = 0; i < body.length; i++) {
+        if (body[i][j]) max = Math.max(max, displayWidth(body[i][j]));
+      }
+      widths.push(max);
+    }
+
+    function fill(row) {
+      var out = [];
+      for (var k = 0; k < width; k++) out.push(padCell(row[k] || '', widths[k]));
+      return out;
+    }
+
+    var lines = [];
+    if (head) {
+      lines.push(pipeRow(fill(head)));
+      var delims = [];
+      for (j = 0; j < width; j++) {
+        delims.push(delimiterCell((align && align[j]) || '', widths[j]));
+      }
+      lines.push(pipeRow(delims));
+    }
+    for (i = 0; i < body.length; i++) lines.push(pipeRow(fill(body[i])));
+    return lines.join('\n');
+  }
+
+  return { parse: parse, formatTable: formatTable };
 });

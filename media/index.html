@@ -294,6 +294,89 @@
     }
   }
 
+  // --- clipboard -----------------------------------------------------------
+  // A selection containing a table is serialised back to pipe syntax here.
+  // Selections without one are left to KaTeX's copy-tex, which already turns
+  // math into LaTeX and otherwise defers to the browser.
+
+  var BLOCK_TAGS = /^(DIV|P|H[1-6]|LI|BLOCKQUOTE|PRE|HR|TABLE|TR)$/;
+
+  function mathSource(el) {
+    var annotation = el.querySelector('annotation[encoding="application/x-tex"]');
+    var tex = (annotation ? annotation.textContent : el.textContent).trim();
+    if (!tex) return '';
+    return el.classList.contains('display') ? '$$' + tex + '$$' : '$' + tex + '$';
+  }
+
+  // Flatten a cell to a single line, math included as its LaTeX source.
+  function cellText(node) {
+    if (node.nodeType === 3) return node.nodeValue;
+    if (node.nodeType !== 1) return '';
+    if (node.classList && node.classList.contains('math')) return mathSource(node);
+    var out = '';
+    for (var i = 0; i < node.childNodes.length; i++) out += cellText(node.childNodes[i]);
+    return out;
+  }
+
+  function alignOf(cell) {
+    if (cell.classList.contains('md-align-center')) return 'center';
+    if (cell.classList.contains('md-align-right')) return 'right';
+    if (cell.classList.contains('md-align-left')) return 'left';
+    return '';
+  }
+
+  function tableToPipes(table) {
+    var rows = table.querySelectorAll('tr');
+    var header = null;
+    var align = [];
+    var body = [];
+    for (var i = 0; i < rows.length; i++) {
+      var cells = rows[i].children;
+      var texts = [];
+      var isHeader = false;
+      for (var j = 0; j < cells.length; j++) {
+        texts.push(cellText(cells[j]));
+        if (cells[j].tagName === 'TH') isHeader = true;
+      }
+      if (isHeader && !header) {
+        header = texts;
+        for (var k = 0; k < cells.length; k++) align.push(alignOf(cells[k]));
+      } else {
+        body.push(texts);
+      }
+    }
+    return AIChatRenderMarkdown.formatTable(header, body, align);
+  }
+
+  function serialize(node) {
+    if (node.nodeType === 3) return node.nodeValue;
+    if (node.nodeType !== 1) return '';
+    // Blank lines around the table keep it a table when pasted back.
+    if (node.tagName === 'TABLE') return '\n\n' + tableToPipes(node) + '\n\n';
+    if (node.classList && node.classList.contains('math')) return mathSource(node);
+    var out = '';
+    for (var i = 0; i < node.childNodes.length; i++) out += serialize(node.childNodes[i]);
+    if (BLOCK_TAGS.test(node.tagName) && out && out.slice(-1) !== '\n') out += '\n';
+    return out;
+  }
+
+  document.addEventListener('copy', function (ev) {
+    var selection = window.getSelection();
+    if (!selection || selection.isCollapsed || !ev.clipboardData) return;
+    // cloneRange keeps the visible selection intact while we widen partial math.
+    var range = selection.getRangeAt(0).cloneRange();
+    var fragment = range.cloneContents();
+    // No table in play: copy-tex's own handler still runs and wins.
+    if (!fragment.querySelector('table')) return;
+    var text = '';
+    for (var i = 0; i < fragment.childNodes.length; i++) {
+      text += serialize(fragment.childNodes[i]);
+    }
+    ev.clipboardData.setData('text/plain', text.replace(/\n{3,}/g, '\n\n').trim());
+    ev.preventDefault();
+    ev.stopImmediatePropagation(); // keep copy-tex from overwriting text/plain
+  }, true); // capture: runs before copy-tex's bubble-phase listener
+
   // Prose is assigned with textContent or text nodes; only math source reaches KaTeX.
   function render(msg) {
     statusEl.textContent = typeof msg.status === 'string' ? msg.status : '';

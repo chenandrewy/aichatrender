@@ -5,7 +5,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parse } = require('../media/markdown');
+const { parse, formatTable } = require('../media/markdown');
 
 test('markdown: headings retain inline math', () => {
   assert.deepEqual(
@@ -103,6 +103,33 @@ test('markdown: tables need a matching delimiter row', () => {
 test('markdown: a headerless pipe table stays a paragraph', () => {
   const blocks = parse([{ t: 'text', s: 'cost | 3 | 4\nother | 5 | 6' }]);
   assert.deepEqual(blocks.map((b) => b.type), ['paragraph']);
+});
+
+test('formatTable: pads columns and writes the alignment row', () => {
+  assert.equal(
+    formatTable(['name', 'value'], [['a', '1'], ['bb', '22']], ['', 'right']),
+    ['| name | value |', '| ---- | ----: |', '| a    | 1     |', '| bb   | 22    |'].join('\n'),
+  );
+});
+
+test('formatTable: escapes pipes, flattens newlines, fills ragged rows', () => {
+  assert.equal(
+    formatTable(['a | b'], [['x\ny'], []], []),
+    ['| a \\| b |', '| ------ |', '| x y    |', '|        |'].join('\n'),
+  );
+});
+
+test('formatTable: a headerless selection omits the delimiter row', () => {
+  assert.equal(formatTable(null, [['a', 'b']], []), '| a   | b   |');
+  assert.equal(formatTable(null, [], []), '');
+});
+
+test('formatTable: output re-parses to the table it came from', () => {
+  const source = '| a | b |\n| :-- | --: |\n| 1 | 2 |';
+  const table = parse([{ t: 'text', s: source }])[0];
+  const flatten = (cells) => cells.map((c) => c.map((t) => t.s).join(''));
+  const round = formatTable(flatten(table.header), table.rows.map(flatten), table.align);
+  assert.deepEqual(parse([{ t: 'text', s: round }]), [table]);
 });
 
 test('markdown: raw HTML remains ordinary paragraph text', () => {
