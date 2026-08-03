@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Markdown tables render as tables. They previously had no parser rule at all,
+  so a table fell through to the paragraph branch and showed up as raw
+  `| --- |` lines. The parser now emits a `table` block with per-column
+  alignment from the delimiter row, honours `\|` escapes, and keeps math spans
+  intact inside cells; short rows are padded and long rows truncated to the
+  header's column count. This is the `| a | b |` pipe syntax, which is what
+  both Claude Code and Codex emit; Pandoc's grid and simple table syntaxes are
+  not recognised and stay plain text.
+
 ### Fixed
 
 - Codex rollouts started in a *subdirectory* of the workspace folder are now

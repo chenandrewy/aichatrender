@@ -81,6 +81,102 @@
     return { type: 'paragraph' };
   }
 
+  // Split a line's tokens on unescaped pipes. Math tokens are opaque, so a
+  // pipe inside rendered math can never split a cell.
+  function splitRow(line) {
+    var cells = [];
+    var current = [];
+    for (var i = 0; i < line.length; i++) {
+      var token = line[i];
+      if (token.t !== 'text') {
+        current.push({ t: 'math', m: token.m, s: token.s });
+        continue;
+      }
+      var buffer = '';
+      for (var j = 0; j < token.s.length; j++) {
+        var ch = token.s[j];
+        if (ch === '\\' && token.s[j + 1] === '|') {
+          buffer += '|';
+          j++;
+        } else if (ch === '|') {
+          pushText(current, buffer);
+          buffer = '';
+          cells.push(current);
+          current = [];
+        } else {
+          buffer += ch;
+        }
+      }
+      pushText(current, buffer);
+    }
+    cells.push(current);
+
+    // GFM drops one optional leading and trailing pipe.
+    var text = lineText(line).trim();
+    if (cells.length > 1 && text.charAt(0) === '|') cells.shift();
+    if (cells.length > 1 && text.charAt(text.length - 1) === '|') cells.pop();
+    for (var k = 0; k < cells.length; k++) cells[k] = trimTokens(cells[k]);
+    return cells;
+  }
+
+  function trimTokens(tokens) {
+    var out = tokens.slice();
+    while (out.length && out[0].t === 'text') {
+      var head = out[0].s.replace(/^[ \t]+/, '');
+      if (head) {
+        out[0] = { t: 'text', s: head };
+        break;
+      }
+      out.shift();
+    }
+    while (out.length && out[out.length - 1].t === 'text') {
+      var tail = out[out.length - 1].s.replace(/[ \t]+$/, '');
+      if (tail) {
+        out[out.length - 1] = { t: 'text', s: tail };
+        break;
+      }
+      out.pop();
+    }
+    return out;
+  }
+
+  function hasPipe(line) {
+    for (var i = 0; i < line.length; i++) {
+      if (line[i].t === 'text' && /(^|[^\\])\|/.test(line[i].s)) return true;
+    }
+    return false;
+  }
+
+  // A delimiter row such as `| --- | :---: |` yields one alignment per column.
+  function alignments(line) {
+    if (!hasPipe(line)) return null;
+    var cells = splitRow(line);
+    var out = [];
+    for (var i = 0; i < cells.length; i++) {
+      var cell = cells[i];
+      if (cell.length !== 1 || cell[0].t !== 'text') return null;
+      var match = cell[0].s.match(/^(:?)-+(:?)$/);
+      if (!match) return null;
+      out.push(match[1] && match[2] ? 'center' : match[2] ? 'right' : match[1] ? 'left' : '');
+    }
+    return out;
+  }
+
+  function tableAt(lines, i) {
+    if (i + 1 >= lines.length || !hasPipe(lines[i])) return null;
+    var align = alignments(lines[i + 1]);
+    if (!align) return null;
+    var header = splitRow(lines[i]);
+    if (header.length !== align.length) return null;
+    return { header: header, align: align };
+  }
+
+  function fitRow(cells, width) {
+    var out = cells.slice(0, width);
+    while (out.length < width) out.push([]);
+    return out;
+  }
+
   function isBlank(line) {
     return lineText(line).trim() === '';
   }
@@ -98,6 +194,23 @@
     while (i < lines.length) {
       if (isBlank(lines[i])) {
         i++;
+        continue;
+      }
+
+      var table = tableAt(lines, i);
+      if (table) {
+        var rows = [];
+        i += 2;
+        while (i < lines.length && !isBlank(lines[i]) && hasPipe(lines[i])) {
+          rows.push(fitRow(splitRow(lines[i]), table.align.length));
+          i++;
+        }
+        blocks.push({
+          type: 'table',
+          align: table.align,
+          header: table.header,
+          rows: rows,
+        });
         continue;
       }
 

@@ -92,6 +92,28 @@
     background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
   }
   .message-body pre code { padding: 0; background: transparent; }
+  .md-table-scroll {
+    margin: 0.5em 0;
+    overflow-x: auto;
+  }
+  .message-body table {
+    border-collapse: collapse;
+    /* pre-wrap on the body would preserve the source's cell padding */
+    white-space: normal;
+  }
+  .message-body th, .message-body td {
+    padding: 0.25em 0.7em;
+    border: 1px solid var(--vscode-panel-border, #888);
+    text-align: left;
+    vertical-align: top;
+  }
+  .message-body th {
+    font-weight: 600;
+    background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
+  }
+  .message-body .md-align-left { text-align: left; }
+  .message-body .md-align-center { text-align: center; }
+  .message-body .md-align-right { text-align: right; }
   .message-body hr {
     height: 1px;
     margin: 0.8em 0;
@@ -214,6 +236,17 @@
     }
   }
 
+  function tableRow(cellTag, cells, align) {
+    var tr = document.createElement('tr');
+    for (var i = 0; i < cells.length; i++) {
+      var cell = document.createElement(cellTag);
+      if (align[i]) cell.className = 'md-align-' + align[i];
+      appendTokens(cell, cells[i]);
+      tr.appendChild(cell);
+    }
+    return tr;
+  }
+
   function renderMarkdown(parent, spans) {
     var blocks = AIChatRenderMarkdown.parse(spans);
     for (var i = 0; i < blocks.length; i++) {
@@ -237,6 +270,19 @@
         var code = document.createElement('code');
         code.textContent = block.text;
         el.appendChild(code);
+      } else if (block.type === 'table') {
+        el = document.createElement('div');
+        el.className = 'md-table-scroll';
+        var table = document.createElement('table');
+        var thead = document.createElement('thead');
+        thead.appendChild(tableRow('th', block.header, block.align));
+        table.appendChild(thead);
+        var tbody = document.createElement('tbody');
+        for (var r = 0; r < block.rows.length; r++) {
+          tbody.appendChild(tableRow('td', block.rows[r], block.align));
+        }
+        table.appendChild(tbody);
+        el.appendChild(table);
       } else if (block.type === 'rule') {
         el = document.createElement('hr');
       } else {

@@ -34,7 +34,8 @@ a terminal is unreadable, and copying an equation out of one is worse.
 - **Copies equations as LaTeX source**, including when a selection mixes prose
   and formulas, via KaTeX's `copy-tex`.
 - **A deliberately small Markdown subset**: headings, lists, blockquotes, rules,
-  bold/italic, inline and fenced code. Raw HTML and Markdown links stay inert
+  bold/italic, inline and fenced code, and `| a | b |` tables (with column
+  alignment and math inside cells). Raw HTML and Markdown links stay inert
   text — see below.
 - Shows assistant text and real user prompts, newest 50 messages. Thinking
   blocks, tool calls and results, and harness bookkeeping are skipped.

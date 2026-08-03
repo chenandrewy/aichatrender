@@ -67,6 +67,44 @@ test('markdown: quotes, rules, paragraphs, and fenced code', () => {
   );
 });
 
+test('markdown: pipe tables carry alignment, math cells, and escaped pipes', () => {
+  assert.deepEqual(
+    parse([
+      { t: 'text', s: '| name | value |\n| :--- | ---: |\n| ' },
+      { t: 'math', m: 'inline', s: 'x' },
+      { t: 'text', s: ' | a \\| b |\n| lone |' },
+    ]),
+    [
+      {
+        type: 'table',
+        align: ['left', 'right'],
+        header: [[{ t: 'text', s: 'name' }], [{ t: 'text', s: 'value' }]],
+        rows: [
+          [[{ t: 'math', m: 'inline', s: 'x' }], [{ t: 'text', s: 'a | b' }]],
+          [[{ t: 'text', s: 'lone' }], []],
+        ],
+      },
+    ],
+  );
+});
+
+test('markdown: tables need a matching delimiter row', () => {
+  assert.deepEqual(
+    parse([{ t: 'text', s: 'a | b\n--- | --- | ---' }]),
+    [
+      {
+        type: 'paragraph',
+        lines: [[{ t: 'text', s: 'a | b' }], [{ t: 'text', s: '--- | --- | ---' }]],
+      },
+    ],
+  );
+});
+
+test('markdown: a headerless pipe table stays a paragraph', () => {
+  const blocks = parse([{ t: 'text', s: 'cost | 3 | 4\nother | 5 | 6' }]);
+  assert.deepEqual(blocks.map((b) => b.type), ['paragraph']);
+});
+
 test('markdown: raw HTML remains ordinary paragraph text', () => {
   assert.deepEqual(parse([{ t: 'text', s: '<img src=x onerror=alert(1)>' }]), [
     {
