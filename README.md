@@ -14,8 +14,10 @@ a terminal is unreadable, and copying an equation out of one is worse.
 ## What it does
 
 - **Follows the active session.** Watches this workspace's Claude transcripts
-  (`~/.claude/projects/`) and cwd-matched Codex rollouts (`~/.codex/sessions/`),
-  following whichever was written most recently and switching automatically.
+  (`~/.claude/projects/`) and Codex rollouts (`~/.codex/sessions/`), following
+  whichever was written most recently and switching automatically. Both vendors
+  count a session as this workspace's when its cwd is the workspace folder or
+  any directory beneath it, so a CLI started in a subfolder is still followed.
 - **AIChatRender: Follow Active Terminal Chat** pins the panel to the transcript
   held open by your active terminal's process tree. If the terminal can't be
   matched — an idle CLI often closes its transcript — a picker lists the

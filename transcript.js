@@ -4,6 +4,8 @@
 // unexpected shape is skipped, never fatal.
 'use strict';
 
+const path = require('path');
+
 const LIMITS = {
   MAX_TEXT: 128 * 1024, // chars kept per message (truncate beyond, with marker)
   MAX_MATH_SPAN: 8192, // chars in a single math span (drop beyond, with notice)
@@ -22,6 +24,20 @@ function mungePath(p) {
   let out = '';
   for (const ch of p) out += /[A-Za-z0-9]/.test(ch) ? ch : '-';
   return out;
+}
+
+// Is `child` the directory `parent`, or anything beneath it? Both vendors record
+// the cwd a session was launched in, and a session in a subdirectory of the
+// workspace folder is still this workspace's session. Purely lexical: callers
+// resolve symlinks first, since only they know which paths are real.
+function pathWithin(parent, child) {
+  if (typeof parent !== 'string' || typeof child !== 'string') return false;
+  if (parent === '' || child === '') return false;
+  const rel = path.relative(parent, child);
+  return (
+    rel === '' ||
+    (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))
+  );
 }
 
 // Splits incoming byte chunks into complete UTF-8 lines. Buffers the trailing
@@ -299,6 +315,7 @@ function parseLine(line, opts) {
 module.exports = {
   LIMITS,
   mungePath,
+  pathWithin,
   LineBuffer,
   segment,
   blockToSpans,

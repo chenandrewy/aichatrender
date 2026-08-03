@@ -7,6 +7,7 @@ const path = require('node:path');
 const {
   LIMITS,
   mungePath,
+  pathWithin,
   LineBuffer,
   segment,
   blockToSpans,
@@ -43,6 +44,34 @@ test('munge: per-char non-alnum to dash, no run-collapsing', () => {
   assert.equal(mungePath('/tmp/pdf2md__logotr_'), '-tmp-pdf2md--logotr-');
   assert.equal(mungePath('/a.b/c d'), '-a-b-c-d');
   assert.equal(mungePath('/workspace'), '-workspace');
+});
+
+// ------------------------------------------------------- workspace containment
+
+test('pathWithin: the folder itself and anything beneath it', () => {
+  assert.equal(pathWithin('/workspace/1-SANDBOX', '/workspace/1-SANDBOX'), true);
+  assert.equal(pathWithin('/workspace/1-SANDBOX', '/workspace/1-SANDBOX/'), true);
+  assert.equal(
+    pathWithin('/workspace/1-SANDBOX', '/workspace/1-SANDBOX/Live,AIChatRender'),
+    true,
+  );
+  assert.equal(pathWithin('/workspace/1-SANDBOX', '/workspace/1-SANDBOX/a/b/c'), true);
+});
+
+test('pathWithin: rejects parents, siblings, and prefix look-alikes', () => {
+  assert.equal(pathWithin('/workspace/1-SANDBOX', '/workspace'), false);
+  assert.equal(pathWithin('/workspace/1-SANDBOX', '/workspace/2-OTHER'), false);
+  // A sibling whose name merely starts with the workspace name is not inside it.
+  assert.equal(pathWithin('/workspace/1-SANDBOX', '/workspace/1-SANDBOX-old'), false);
+  assert.equal(pathWithin('/workspace/1-SANDBOX', '/'), false);
+});
+
+test('pathWithin: empty or non-string operands are not a match', () => {
+  assert.equal(pathWithin('/workspace', ''), false);
+  assert.equal(pathWithin('', '/workspace'), false);
+  assert.equal(pathWithin('/workspace', undefined), false);
+  assert.equal(pathWithin(undefined, '/workspace'), false);
+  assert.equal(pathWithin('/workspace', 42), false);
 });
 
 // ---------------------------------------------------------------- filtering

@@ -12,6 +12,7 @@ const crypto = require('crypto');
 const {
   LIMITS,
   mungePath,
+  pathWithin,
   LineBuffer,
   turnPreview,
   parseLine: parseClaudeLine,
@@ -31,6 +32,7 @@ const DISCOVERY_MS = 1000;
 const WATCH_MS = 750;
 const CODEX_DAYS = 7;
 const FIRST_LINE_CHUNK = 64 * 1024;
+const MAX_CWD_CACHE = 512;
 const NO_SESSION = 'No Claude Code or Codex CLI session found for this workspace.';
 
 let panel; // singleton WebviewPanel
@@ -278,6 +280,7 @@ function startFollower() {
     claudeProjDir: path.join(os.homedir(), '.claude', 'projects', mungePath(real)),
     codexRoot: path.join(os.homedir(), '.codex', 'sessions'),
     codexMetaCache: new Map(), // positive path+inode; negative path+inode+size
+    cwdMatch: new Map(), // recorded session cwd -> is it inside this workspace?
     file: undefined,
     source: undefined,
     pinned: undefined,
@@ -311,6 +314,27 @@ function newer(a, b) {
   return b.path > a.path ? b : a;
 }
 
+// Does a recorded session cwd belong to this workspace? Both vendors record the
+// directory the CLI was launched in, and a session started in a subdirectory is
+// still this workspace's session -- so the test is containment, not equality.
+// `workspaceReal` is a realpath, so resolve the cwd before comparing, falling
+// back to its spelling when the directory is gone. Cached per spelling: this
+// runs on every rollout in the Codex scan, once a second.
+function withinWorkspace(cwd) {
+  if (typeof cwd !== 'string' || cwd === '') return false;
+  const cached = follower.cwdMatch.get(cwd);
+  if (cached !== undefined) return cached;
+  let real;
+  try {
+    real = fs.realpathSync(cwd);
+  } catch {
+    real = cwd;
+  }
+  const match = pathWithin(follower.workspaceReal, real);
+  if (follower.cwdMatch.size < MAX_CWD_CACHE) follower.cwdMatch.set(cwd, match);
+  return match;
+}
+
 function activeClaudeCandidate(terminalPid) {
   const state = claudeSessionForProcessTree(
     terminalPid,
@@ -318,20 +342,12 @@ function activeClaudeCandidate(terminalPid) {
   );
   if (!state) return undefined;
 
+  if (!withinWorkspace(state.cwd)) return undefined;
   let cwdReal;
   try {
     cwdReal = fs.realpathSync(state.cwd);
   } catch {
-    return undefined;
-  }
-  const relative = path.relative(follower.workspaceReal, cwdReal);
-  if (
-    relative !== '' &&
-    (relative === '..' ||
-      relative.startsWith(`..${path.sep}`) ||
-      path.isAbsolute(relative))
-  ) {
-    return undefined;
+    cwdReal = state.cwd;
   }
 
   // Claude keys its project directory by the cwd spelling it was launched
@@ -444,7 +460,7 @@ function discoverCodexCandidates() {
         () => readFirstLine(p),
       );
       if (!meta) continue;
-      if (meta.cwd !== follower.workspaceReal) continue;
+      if (!withinWorkspace(meta.cwd)) continue;
       candidates.push({
         path: p,
         source: 'codex',
@@ -461,8 +477,9 @@ function discoverCandidates() {
   return [...discoverClaudeCandidates(), ...discoverCodexCandidates()];
 }
 
-// Every ~1s: union the Claude project candidates with cwd-matched Codex
-// rollouts from the last seven date directories plus tomorrow's timezone guard,
+// Every ~1s: union the Claude project candidates with the Codex rollouts whose
+// cwd is inside this workspace, from the last seven date directories plus
+// tomorrow's timezone guard,
 // then follow the newest mtime.
 function discover() {
   if (!follower || !follower.claudeProjDir) return;

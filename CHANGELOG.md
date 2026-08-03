@@ -5,6 +5,19 @@ All notable changes to AIChatRender are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- Codex rollouts started in a *subdirectory* of the workspace folder are now
+  discovered. Codex matching required the recorded cwd to equal the workspace
+  root exactly, while Claude had always accepted any cwd beneath it; a Codex
+  session run in, say, `1-SANDBOX/Live,AIChatRender` with `1-SANDBOX` open in
+  VS Code was filtered out of the candidate list, so **Follow Active Terminal
+  Chat** could not match it even though the terminal held the rollout open, and
+  fell back to the picker with only stale chats in it. Both vendors now share
+  one realpath-based containment test (`pathWithin`).
+
 ## [0.5.0] — 2026-08-02
 
 ### Added
