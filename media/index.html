@@ -152,6 +152,12 @@
     font-family: var(--vscode-editor-font-family, monospace);
     background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
   }
+  .assistant .message-body :not(pre) > code {
+    padding: 0;
+    border-radius: 0;
+    color: var(--vscode-terminal-ansiCyan, var(--vscode-textLink-foreground));
+    background: transparent;
+  }
   .message-body pre code { padding: 0; background: transparent; }
   .md-table-scroll {
     margin: 0.5em 0;

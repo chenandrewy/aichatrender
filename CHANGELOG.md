@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Assistant inline code now uses the editor theme's terminal-cyan colour without
+  a pill background, matching the Claude Code and Codex CLI treatment of paths,
+  branch names, commit IDs, commands, and other backtick-delimited text. Fenced
+  code blocks and user prompts keep their existing presentation.
 - **Panel history is now measured in user turns, not messages**: the newest 100
   turns are retained, cut at a turn boundary so the panel always opens on a
   prompt rather than mid-exchange. Turns are the unit a chat is actually read
