@@ -15,6 +15,9 @@ const {
   pathWithin,
   LineBuffer,
   turnPreview,
+  applyToolResults,
+  markStalePending,
+  trimToTurns,
   parseLine: parseClaudeLine,
 } = require('./transcript');
 const {
@@ -595,10 +598,10 @@ function readRange(fd, from, to) {
       m.key = follower.nextKey++;
       follower.messages.push(m);
     }
+    applyToolResults(follower.messages, r.results);
   }
-  if (follower.messages.length > LIMITS.MAX_MESSAGES) {
-    follower.messages = follower.messages.slice(-LIMITS.MAX_MESSAGES);
-  }
+  follower.messages = trimToTurns(follower.messages);
+  markStalePending(follower.messages);
   return read;
 }
 
@@ -625,12 +628,16 @@ function sendHistory() {
   panel.webview.postMessage({
     type: 'replaceHistory',
     entries: f
-      ? f.messages.map((m) => ({
-          key: m.key,
-          role: m.role,
-          tsDisplay: tsDisplay(m.ts),
-          spans: m.spans,
-        }))
+      ? f.messages.map((m) =>
+          m.role === 'tool'
+            ? { key: m.key, role: 'tool', tool: m.tool, result: m.result, stale: m.stale === true }
+            : {
+                key: m.key,
+                role: m.role,
+                tsDisplay: tsDisplay(m.ts),
+                spans: m.spans,
+              },
+        )
       : [],
     status: f ? f.status : '',
     notice:

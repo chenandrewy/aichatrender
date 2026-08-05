@@ -97,7 +97,9 @@ function parseTranscript(raw, options = {}) {
     const parsed =
       provider === 'codex' ? parseCodexLine(line, opts) : parseClaudeLine(line, opts);
     if (parsed.unexpected) unexpectedRecords += 1;
-    messages.push(...parsed.messages);
+    // Tool calls are a panel feature: the export is prose meant to be pasted
+    // into a document, so it stays the transcript's conversation alone.
+    messages.push(...parsed.messages.filter((message) => message.role !== 'tool'));
   }
   return {
     provider,

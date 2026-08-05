@@ -9,15 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- The panel now retains the newest 500 rendered messages instead of 50, and a
-  whole-file rebuild reads up to the final 10 MiB of a transcript instead of
-  4 MiB. Longer chats therefore keep substantially more scrollback, including
-  the complete `claude1` development example.
+- **Panel history is now measured in user turns, not messages**: the newest 100
+  turns are retained, cut at a turn boundary so the panel always opens on a
+  prompt rather than mid-exchange. Turns are the unit a chat is actually read
+  in. A message ceiling remains underneath, because the panel rebuilds every
+  entry on each append and one turn can hold hundreds of tool calls; it does not
+  fire in ordinary use.
+- A whole-file rebuild now reads up to the final 10 MiB of a transcript instead
+  of 4 MiB, so longer chats keep substantially more scrollback, including the
+  complete `claude1` development example.
 - **Browse Turns and Pick** now lists prompts oldest-to-newest, matching both
   the transcript and the upper-right numbered turn index.
 
 ### Added
 
+- **Claude Code tool calls now appear in the panel**, shaped after the CLI's own
+  display: the tool and its primary argument on one line, the first few lines of
+  its result under it, and a count of the lines not shown. Failed calls are
+  marked and keep their reason. Paths inside the session's working directory are
+  shown relative to it. Results are clipped as they are read, so a chat full of
+  large outputs does not grow the panel's memory in proportion. Subagent calls
+  and thinking blocks stay out, as before.
+- A file read collapses to its line count and a file edit reports its added and
+  removed lines, rather than reprinting the file or the confirmation sentence
+  the model was sent. Commands are unchanged, since there the transcript's
+  documented result field already is the command's output.
+- **File edits now render their diff**, numbered by line — removals against the
+  old file, additions and context against the new — with hunks separated and
+  long diffs cut to a line budget with a "+N more lines" marker. Colours come
+  from the editor's own diff theme rather than fixed values, so a diff matches
+  the surrounding editor in any theme. Copying one yields a fenced `diff` block;
+  the line numbers are CSS generated content and so stay out of the clipboard.
+  Syntax highlighting inside the diff is deliberately not attempted: a patch
+  supplies hunks rather than whole files, so a highlighter would be lexing from
+  an arbitrary mid-file offset and would mis-tokenize at the edges.
+- The panel now says when a tool call's result never arrived. Previously an
+  unanswered call read "running…" indefinitely, which looked identical to the
+  panel having lost track of the transcript format.
+- An unrecognized content block now raises the existing "transcript format may
+  have changed" notice instead of vanishing from the panel silently.
+- Codex CLI sessions are unaffected: its rollouts record a tool call as a
+  JavaScript program inside a string, with the human-readable labels in a
+  separate event stream keyed by a different id space, so the same treatment
+  needs its own parser. Codex prose renders exactly as it did before.
 - Copying rendered transcript content now writes the corresponding Markdown to
   the plain-text clipboard. Headings, bold and italic emphasis, blockquotes,
   ordered and unordered lists, inline and fenced code, rules, tables, and math

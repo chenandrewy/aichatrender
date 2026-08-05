@@ -361,3 +361,46 @@ test('clipboard: a partial equation selection widens to the complete source', ()
   assert.deepEqual(calls, [['start', formula], ['end', formula]]);
   assert.equal(serializeMarkdown(contextual), '$x+y$');
 });
+
+test('copy: a tool call serialises to its call line and a fenced result', () => {
+  // The panel builds tool entries out of plain elements, so the clipboard
+  // serialiser needs no tool-specific cases — this pins that it stays true.
+  const rendered = element('article', { class: 'tool' }, [
+    element('div', { class: 'tool-call md-paragraph' }, [
+      element('span', { class: 'tool-name' }, [text('Bash')]),
+      element('span', { class: 'tool-arg' }, [text('(ls -l)')]),
+    ]),
+    element('pre', { class: 'tool-result' }, [text('a.js\nb.js')]),
+    element('div', { class: 'tool-note md-paragraph' }, [text('+3 lines')]),
+  ]);
+
+  assert.equal(
+    serializeMarkdown(rendered),
+    ['Bash(ls -l)', '', '```', 'a.js', 'b.js', '```', '', '+3 lines'].join('\n'),
+  );
+});
+
+test('copy: a rendered diff comes back as a fenced diff, without line numbers', () => {
+  // Line numbers are CSS generated content (::before on data-n), so they are
+  // absent from the DOM text and cannot land in the clipboard.
+  const rendered = element('div', { class: 'tool-diff' }, [
+    element('div', { class: 'diff-line ctx', 'data-n': '124' }, [text('     labelpad=6)')]),
+    element('div', { class: 'diff-line del', 'data-n': '126' }, [text('-def build(a, b):')]),
+    element('div', { class: 'diff-line add', 'data-n': '126' }, [text('+def build(a, b, c):')]),
+    element('div', { class: 'diff-gap' }, [text('⋯')]),
+    element('div', { class: 'diff-line del', 'data-n': '200' }, [text('-    old_call()')]),
+  ]);
+
+  assert.equal(
+    serializeMarkdown(rendered),
+    [
+      '```diff',
+      '     labelpad=6)',
+      '-def build(a, b):',
+      '+def build(a, b, c):',
+      '⋯',
+      '-    old_call()',
+      '```',
+    ].join('\n'),
+  );
+});

@@ -509,6 +509,15 @@
     if (node.nodeType !== 1 && node.nodeType !== 11) return '';
     if (node.nodeType === 11) return serialiseChildren(node, options);
     if (hasClass(node, 'math')) return mathSource(node);
+    // A rendered tool diff copies as a fenced diff. Line numbers are CSS
+    // generated content, so rawText already excludes them; the +/- markers are
+    // real text and survive, which is what makes the fence meaningful.
+    if (hasClass(node, 'tool-diff')) {
+      return '```diff\n' + trimNewlines(serialiseChildren(node, options)) + '\n```\n\n';
+    }
+    if (hasClass(node, 'diff-line') || hasClass(node, 'diff-gap')) {
+      return rawText(node) + '\n';
+    }
 
     var tag = node.tagName;
     var content;
