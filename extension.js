@@ -194,18 +194,20 @@ async function pickCandidate(candidates) {
 
 // ---------------------------------------------------------------- turn picker
 
-// Lists the user prompts among the messages the panel currently holds, newest
+// Lists the user prompts among the messages the panel currently holds, oldest
 // first, and scrolls the panel to the one picked. Scope is deliberately what is
 // rendered: the picker can never offer a turn the panel cannot show.
 async function browseTurns(context) {
   show(context, true, true);
   const messages = (follower && follower.messages) || [];
   const items = [];
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
+  let turnNumber = 0;
+  for (let i = 0; i < messages.length; i += 1) {
     const m = messages[i];
     if (m.role !== 'user') continue;
+    turnNumber += 1;
     items.push({
-      label: turnPreview(m.spans) || '(empty prompt)',
+      label: `${turnNumber}. ${turnPreview(m.spans) || '(empty prompt)'}`,
       description: tsDisplay(m.ts),
       key: m.key,
     });
@@ -218,11 +220,6 @@ async function browseTurns(context) {
     );
     return;
   }
-  // Number the turns oldest-to-newest so the labels match the panel's index.
-  const total = items.length;
-  items.forEach((item, idx) => {
-    item.label = `${total - idx}. ${item.label}`;
-  });
   const picked = await vscode.window.showQuickPick(items, {
     placeHolder: 'Select a turn to scroll the panel to',
     matchOnDescription: true,

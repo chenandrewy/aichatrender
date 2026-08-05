@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   whole-file rebuild reads up to the final 10 MiB of a transcript instead of
   4 MiB. Longer chats therefore keep substantially more scrollback, including
   the complete `claude1` development example.
+- **Browse Turns and Pick** now lists prompts oldest-to-newest, matching both
+  the transcript and the upper-right numbered turn index.
 
 ### Added
 
