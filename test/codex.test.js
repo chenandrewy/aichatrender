@@ -251,7 +251,7 @@ test('bookkeeping: reasoning, tools, and unknown records are ignored', () => {
 
 test('fixture: synthetic rollout yields one user and one assistant, without duplicates', () => {
   const lines = fs
-    .readFileSync(path.join(__dirname, '..', 'fixtures', 'rollout.jsonl'), 'utf8')
+    .readFileSync(path.join(__dirname, 'fixtures', 'rollout.jsonl'), 'utf8')
     .trimEnd()
     .split('\n');
   assert.deepEqual(sessionMetaFromLine(lines[0]), {

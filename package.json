@@ -25,6 +25,11 @@
     "vscode": "^1.85.0"
   },
   "main": "./extension.js",
+  "scripts": {
+    "test": "node --test",
+    "chat-example": "node scripts/chat-example.js",
+    "export-transcript": "node scripts/export-transcript.js"
+  },
   "extensionKind": [
     "workspace"
   ],

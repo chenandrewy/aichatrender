@@ -303,7 +303,8 @@ function parseLine(line, opts) {
       !s ||
       s.startsWith('<command-') ||
       s.startsWith('<local-command') ||
-      s.startsWith('<system-reminder>')
+      s.startsWith('<system-reminder>') ||
+      s.startsWith('<task-notification>')
     ) {
       return none; // harness bookkeeping, not something the user typed
     }

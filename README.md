@@ -31,9 +31,10 @@ a terminal is unreadable, and copying an equation out of one is worse.
 - **Renders math** with a vendored, pinned KaTeX: `$$…$$` and `\[…\]` display,
   `\(…\)` and `$…$` inline. Single-`$` uses Pandoc-style guards so currency and
   `$VAR` don't trigger false positives.
-- **Copies equations as LaTeX source**, including when a selection mixes prose
-  and formulas, via KaTeX's `copy-tex`. **Tables copy back as pipe syntax**,
-  alignment and math cells intact, so a paste re-renders as a table.
+- **Copies rendered content back as Markdown source.** Headings, emphasis,
+  blockquotes, ordered and unordered lists, code, rules, and tables retain their
+  syntax; equations become their original LaTeX. Mixed and partial selections
+  keep their surrounding Markdown context, and table alignment remains intact.
 - **A deliberately small Markdown subset**: headings, lists, blockquotes, rules,
   bold/italic, inline and fenced code, and `| a | b |` tables (with column
   alignment and math inside cells). Raw HTML and Markdown links stay inert

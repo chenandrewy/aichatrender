@@ -114,6 +114,7 @@ test('user: real prompt kept, tool results and bookkeeping skipped', () => {
   assert.equal(parseLine(userLine('<command-name>/clear</command-name>'), OPTS).messages.length, 0);
   assert.equal(parseLine(userLine('<local-command-stdout></local-command-stdout>'), OPTS).messages.length, 0);
   assert.equal(parseLine(userLine('<system-reminder>x</system-reminder>'), OPTS).messages.length, 0);
+  assert.equal(parseLine(userLine('<task-notification>x</task-notification>'), OPTS).messages.length, 0);
 });
 
 test('user: excluded entirely when includeUser is off', () => {
@@ -279,7 +280,7 @@ test('LineBuffer: startMidLine drops through the first newline', () => {
 // ---------------------------------------------------------------- fixture
 
 test('fixture: synthetic session parses to the expected conversation', () => {
-  const raw = fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'session.jsonl'));
+  const raw = fs.readFileSync(path.join(__dirname, 'fixtures', 'session.jsonl'));
   const lb = new LineBuffer();
   const messages = [];
   let unexpected = false;
