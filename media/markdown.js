@@ -72,8 +72,15 @@
     }
     match = text.match(/^ {0,3}([-+*])[ \t]+/);
     if (match) return { type: 'list', ordered: false, prefix: match[0].length };
-    match = text.match(/^ {0,3}\d+[.)][ \t]+/);
-    if (match) return { type: 'list', ordered: true, prefix: match[0].length };
+    match = text.match(/^ {0,3}(\d+)[.)][ \t]+/);
+    if (match) {
+      return {
+        type: 'list',
+        ordered: true,
+        prefix: match[0].length,
+        number: parseInt(match[1], 10),
+      };
+    }
     match = text.match(/^ {0,3}>[ \t]?/);
     if (match) return { type: 'blockquote', prefix: match[0].length };
     match = text.match(/^ {0,3}```[ \t]*([A-Za-z0-9_-]+)?[ \t]*$/);
@@ -242,10 +249,12 @@
       }
       if (kind.type === 'list') {
         var list = { type: 'list', ordered: kind.ordered, items: [] };
+        if (kind.ordered) list.values = [];
         while (i < lines.length) {
           var itemKind = marker(lines[i]);
           if (itemKind.type !== 'list' || itemKind.ordered !== kind.ordered) break;
           list.items.push(stripPrefix(lines[i], itemKind.prefix));
+          if (kind.ordered) list.values.push(itemKind.number);
           i++;
         }
         blocks.push(list);
@@ -274,8 +283,9 @@
   }
 
   // --- clipboard -----------------------------------------------------------
-  // Render extracted cell strings back to pipe syntax. Kept here, away from the
-  // DOM walk in index.html, so the fiddly padding and escaping stay testable.
+  // Render the safe DOM produced by index.html back to the Markdown subset.
+  // These functions deliberately inspect only the fixed elements that our
+  // renderer creates; arbitrary HTML remains inert on both render and copy.
 
   function escapeCell(text) {
     return String(text == null ? '' : text)
@@ -350,5 +360,225 @@
     return lines.join('\n');
   }
 
-  return { parse: parse, formatTable: formatTable };
+  function childNodes(node) {
+    return node && node.childNodes ? Array.prototype.slice.call(node.childNodes) : [];
+  }
+
+  function elementChildren(node) {
+    return childNodes(node).filter(function (child) { return child.nodeType === 1; });
+  }
+
+  function hasClass(node, name) {
+    if (!node || node.nodeType !== 1) return false;
+    if (node.classList && typeof node.classList.contains === 'function') {
+      return node.classList.contains(name);
+    }
+    return (' ' + (node.className || '') + ' ').indexOf(' ' + name + ' ') >= 0;
+  }
+
+  function attribute(node, name) {
+    if (!node || typeof node.getAttribute !== 'function') return null;
+    return node.getAttribute(name);
+  }
+
+  function rawText(node) {
+    if (!node) return '';
+    if (node.nodeType === 3) return node.nodeValue || '';
+    var out = '';
+    var children = childNodes(node);
+    for (var i = 0; i < children.length; i++) out += rawText(children[i]);
+    return out;
+  }
+
+  function descendants(node, tagName) {
+    var out = [];
+    var children = elementChildren(node);
+    for (var i = 0; i < children.length; i++) {
+      if (children[i].tagName === tagName) out.push(children[i]);
+      out = out.concat(descendants(children[i], tagName));
+    }
+    return out;
+  }
+
+  function firstAnnotation(node) {
+    var children = elementChildren(node);
+    for (var i = 0; i < children.length; i++) {
+      if (children[i].tagName === 'ANNOTATION'
+          && attribute(children[i], 'encoding') === 'application/x-tex') {
+        return children[i];
+      }
+      var nested = firstAnnotation(children[i]);
+      if (nested) return nested;
+    }
+    return null;
+  }
+
+  function mathSource(node) {
+    var annotation = firstAnnotation(node);
+    var tex = rawText(annotation || node).trim();
+    if (!tex) return '';
+    return hasClass(node, 'display') ? '$$' + tex + '$$' : '$' + tex + '$';
+  }
+
+  function alignOf(cell) {
+    if (hasClass(cell, 'md-align-center')) return 'center';
+    if (hasClass(cell, 'md-align-right')) return 'right';
+    if (hasClass(cell, 'md-align-left')) return 'left';
+    return '';
+  }
+
+  function repeat(text, count) {
+    return new Array(count + 1).join(text);
+  }
+
+  function trimNewlines(text) {
+    return text.replace(/^\n+|\n+$/g, '');
+  }
+
+  function inlineCode(text) {
+    var runs = text.match(/`+/g) || [];
+    var width = 1;
+    for (var i = 0; i < runs.length; i++) width = Math.max(width, runs[i].length + 1);
+    var fence = repeat('`', width);
+    var pad = /^`|`$/.test(text) ? ' ' : '';
+    return fence + pad + text + pad + fence;
+  }
+
+  function serialiseChildren(node, options) {
+    var out = '';
+    var children = childNodes(node);
+    for (var i = 0; i < children.length; i++) out += serialiseNode(children[i], options);
+    return out;
+  }
+
+  function tableToPipes(table) {
+    var rows = descendants(table, 'TR');
+    var header = null;
+    var align = [];
+    var body = [];
+    for (var i = 0; i < rows.length; i++) {
+      var cells = elementChildren(rows[i]);
+      var texts = [];
+      var isHeader = false;
+      for (var j = 0; j < cells.length; j++) {
+        if (cells[j].tagName !== 'TH' && cells[j].tagName !== 'TD') continue;
+        texts.push(trimNewlines(serialiseChildren(cells[j], { tableCell: true })));
+        if (cells[j].tagName === 'TH') isHeader = true;
+      }
+      if (!texts.length) continue;
+      if (isHeader && !header) {
+        header = texts;
+        for (var k = 0; k < cells.length; k++) align.push(alignOf(cells[k]));
+      } else {
+        body.push(texts);
+      }
+    }
+    return formatTable(header, body, align);
+  }
+
+  function quote(text) {
+    var lines = trimNewlines(text).split('\n');
+    for (var i = 0; i < lines.length; i++) lines[i] = lines[i] ? '> ' + lines[i] : '>';
+    return lines.join('\n');
+  }
+
+  function list(node, ordered) {
+    var children = elementChildren(node);
+    var items = [];
+    var start = parseInt(attribute(node, 'start') || '1', 10);
+    if (!Number.isFinite(start)) start = 1;
+    for (var i = 0; i < children.length; i++) {
+      if (children[i].tagName !== 'LI') continue;
+      var value = parseInt(attribute(children[i], 'value') || '', 10);
+      var number = Number.isFinite(value) ? value : start + items.length;
+      var marker = ordered ? number + '.' : '-';
+      var content = trimNewlines(serialiseChildren(children[i], {}));
+      var lines = content.split('\n');
+      var indent = repeat(' ', marker.length + 1);
+      var item = marker + ' ' + (lines.shift() || '');
+      for (var j = 0; j < lines.length; j++) item += '\n' + indent + lines[j];
+      items.push(item);
+    }
+    return items.join('\n');
+  }
+
+  function serialiseNode(node, options) {
+    options = options || {};
+    if (!node) return '';
+    if (node.nodeType === 3) return node.nodeValue || '';
+    if (node.nodeType !== 1 && node.nodeType !== 11) return '';
+    if (node.nodeType === 11) return serialiseChildren(node, options);
+    if (hasClass(node, 'math')) return mathSource(node);
+
+    var tag = node.tagName;
+    var content;
+    if (tag === 'BR') return '\n';
+    if (tag === 'EM') return '*' + serialiseChildren(node, options) + '*';
+    if (tag === 'STRONG') return '**' + serialiseChildren(node, options) + '**';
+    if (tag === 'CODE' && !options.pre) return inlineCode(rawText(node));
+    if (/^H[1-6]$/.test(tag)) {
+      return repeat('#', parseInt(tag.slice(1), 10)) + ' '
+        + trimNewlines(serialiseChildren(node, options)) + '\n\n';
+    }
+    if (tag === 'BLOCKQUOTE') return quote(serialiseChildren(node, options)) + '\n\n';
+    if (tag === 'UL') return list(node, false) + '\n\n';
+    if (tag === 'OL') return list(node, true) + '\n\n';
+    if (tag === 'LI') return trimNewlines(serialiseChildren(node, options)) + '\n';
+    if (tag === 'PRE') {
+      content = rawText(node).replace(/^\n|\n$/g, '');
+      return '```' + (attribute(node, 'data-language') || '')
+        + '\n' + content + '\n```\n\n';
+    }
+    if (tag === 'TABLE') return tableToPipes(node) + '\n\n';
+    if (tag === 'HR') return '---\n\n';
+    if (tag === 'P' || hasClass(node, 'md-paragraph')) {
+      return trimNewlines(serialiseChildren(node, options)) + '\n\n';
+    }
+    if (tag === 'HEADER') return trimNewlines(serialiseChildren(node, options)) + '\n';
+    if (tag === 'ARTICLE') return trimNewlines(serialiseChildren(node, options)) + '\n\n';
+    return serialiseChildren(node, options);
+  }
+
+  function serializeMarkdown(node) {
+    return serialiseNode(node, {}).replace(/^\n+|\n+$/g, '');
+  }
+
+  function closestClass(node, name) {
+    var current = node && node.nodeType === 1 ? node : node && node.parentNode;
+    while (current) {
+      if (hasClass(current, name)) return current;
+      current = current.parentNode;
+    }
+    return null;
+  }
+
+  // Range.cloneContents() omits its common ancestor. Rebuild that shallow
+  // context so a selection wholly inside an <em>, heading, quote, or list item
+  // still carries the corresponding Markdown marker. Math is widened first,
+  // just as KaTeX copy-tex does, because a partial formula is not useful source.
+  function cloneSelectionWithContext(sourceRange, boundary) {
+    var range = sourceRange.cloneRange();
+    var startMath = closestClass(range.startContainer, 'math');
+    var endMath = closestClass(range.endContainer, 'math');
+    if (startMath) range.setStartBefore(startMath);
+    if (endMath) range.setEndAfter(endMath);
+
+    var fragment = range.cloneContents();
+    var context = range.commonAncestorContainer;
+    if (context && context.nodeType !== 1) context = context.parentNode;
+    while (context && context !== boundary) {
+      var shell = context.cloneNode(false);
+      shell.appendChild(fragment);
+      fragment = shell;
+      context = context.parentNode;
+    }
+    return fragment;
+  }
+
+  return {
+    parse: parse,
+    formatTable: formatTable,
+    serializeMarkdown: serializeMarkdown,
+    cloneSelectionWithContext: cloneSelectionWithContext,
+  };
 });

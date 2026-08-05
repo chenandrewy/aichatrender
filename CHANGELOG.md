@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Copying rendered transcript content now writes the corresponding Markdown to
+  the plain-text clipboard. Headings, bold and italic emphasis, blockquotes,
+  ordered and unordered lists, inline and fenced code, rules, tables, and math
+  retain their source form, including in mixed selections. Partial selections
+  inside formatted content regain their surrounding marker, and partial math
+  selections widen to the complete formula.
+
 - Markdown tables render as tables. They previously had no parser rule at all,
   so a table fell through to the paragraph branch and showed up as raw
   `| --- |` lines. The parser now emits a `table` block with per-column
@@ -21,8 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Copying a selection that contains a table puts pipe syntax on the clipboard
   rather than the browser's tab-separated flattening, with column alignment
   preserved and math cells written as their LaTeX source — the same round-trip
-  KaTeX's `copy-tex` already gave equations. Selections without a table are
-  untouched and still go through `copy-tex`.
+  KaTeX's `copy-tex` already gave equations.
 
 ### Fixed
 

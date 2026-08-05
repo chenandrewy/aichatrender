@@ -1,4 +1,4 @@
-// Run: `node --test .tools/aichatrender/extension/test/copy-tex.test.js`.
+// Run: `node --test test/copy-tex.test.js`.
 // Input: the pinned KaTeX copy-tex asset and AIChatRender webview template.
 // Output: assertions for vendor integrity and clipboard-script load order.
 'use strict';
@@ -40,19 +40,19 @@ test('copy-tex: webview loads it after KaTeX and before AIChatRender rendering',
   );
 });
 
-// The table serialiser must win over copy-tex for selections holding a table,
-// and stay out of the way otherwise. copy-tex listens on the bubble phase, so
-// ours has to be registered with capture and must bail before preventDefault
-// when the fragment has no table in it.
-test('copy-tex: the table copy handler captures and defers when there is no table', () => {
+// The Markdown serialiser owns transcript selections, including their math,
+// before copy-tex can flatten the other rendered structures.
+test('copy-tex: the Markdown copy handler captures transcript selections', () => {
   const html = fs.readFileSync(path.join(EXTENSION_DIR, 'media', 'index.html'), 'utf8');
   const handler = html.slice(html.indexOf("addEventListener('copy'"));
   assert.ok(handler.startsWith("addEventListener('copy'"), 'copy handler present');
   const body = handler.slice(0, handler.indexOf('}, true);') + '}, true);'.length);
   assert.match(body, /}, true\);$/, 'registered on the capture phase');
   assert.ok(
-    body.indexOf("querySelector('table')") < body.indexOf('preventDefault'),
-    'bails on table-free selections before taking over the clipboard',
+    body.indexOf('log.contains') < body.indexOf('preventDefault'),
+    'bails on selections outside the transcript before taking over the clipboard',
   );
+  assert.match(body, /cloneSelectionWithContext/);
+  assert.match(body, /serializeMarkdown/);
   assert.match(body, /stopImmediatePropagation/);
 });
