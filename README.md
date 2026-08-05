@@ -28,6 +28,14 @@ a terminal is unreadable, and copying an equation out of one is worse.
   bounds rendered width, so wide characters count double). Picking one scrolls
   the panel to that turn and flashes it. The list covers the messages the panel
   currently holds, so it never offers a turn the panel cannot show.
+- **AIChatRender: Search Chat Source** searches the Markdown and LaTeX behind
+  the rendering rather than the rendering itself, which is the only way to find
+  a symbol by name: the panel draws `\theta` as θ, so no search of the displayed
+  text can match `\theta`. Enter a query, and the matching lines are listed one
+  per line with their turn number and role; picking one scrolls the panel there
+  and flashes it, as the turn picker does. Matching is case-insensitive
+  substring, not regular expression. Tool calls are not searched — their output
+  reaches the panel as ordinary text, where the find widget already covers it.
 - **Finds text in the panel.** With the panel focused, `Cmd+F` (`Ctrl+F` on
   Windows and Linux) opens VS Code's find widget over the rendered chat, with
   the usual next/previous and match count. It searches what is currently in the

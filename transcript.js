@@ -28,6 +28,9 @@ const LIMITS = {
   MAX_MESSAGES: 3000, // redraw ceiling under MAX_TURNS (see trimToTurns)
   MAX_REBUILD_BYTES: 10 * 1024 * 1024, // tail read on whole-file rebuild
   TURN_PREVIEW: 80, // UTF-16 units of a user prompt shown in the turn picker
+  SEARCH_PREVIEW: 80, // UTF-16 units of a matching line shown in the source picker
+  SEARCH_LEAD: 24, // units kept before the match, so context precedes it
+  MAX_SEARCH_HITS: 500, // matches returned before the picker is cut short
   ...TOOL_LIMITS,
 };
 
@@ -277,6 +280,83 @@ function turnPreview(spans, maxUnits = LIMITS.TURN_PREVIEW) {
   return `${cutUnits(out, maxUnits).trimEnd()}…`;
 }
 
+// Reconstructs a message's source text from its spans: text verbatim, math with
+// its delimiters restored. This is the string the source search matches against,
+// which is the point of the feature — the panel renders `\theta` as θ, so the
+// rendered DOM cannot be searched for the name of a symbol, but this can.
+//
+// Display math is written back as `$$…$$` whichever delimiter the author used,
+// since segment() records the mode rather than the original characters. `\[…\]`
+// in a transcript is therefore found by searching its body, not its delimiters.
+function messageSource(spans) {
+  const list = Array.isArray(spans) ? spans : [];
+  let out = '';
+  for (let i = 0; i < list.length; i += 1) {
+    const sp = list[i];
+    if (!sp || typeof sp.s !== 'string') continue;
+    if (sp.t !== 'math') {
+      out += sp.s;
+      continue;
+    }
+    out += sp.m === 'display' ? `$$${sp.s}$$` : `$${sp.s}$`;
+  }
+  return out;
+}
+
+// A one-line preview centred on the match, so a hit late in a long line is still
+// visible in the picker. Ellipses mark either side that was cut. Whitespace is
+// collapsed after windowing, so the cap bounds the raw slice and the label ends
+// up no wider — never wider — than the cap suggests.
+function hitPreview(line, idx, maxUnits = LIMITS.SEARCH_PREVIEW, lead = LIMITS.SEARCH_LEAD) {
+  let start = Math.max(0, idx - lead);
+  // Never open on a lone low surrogate: that renders as a replacement character
+  // and, worse, would be the first thing the eye lands on.
+  const first = line.charCodeAt(start);
+  if (start > 0 && first >= 0xdc00 && first <= 0xdfff) start -= 1;
+  const window = cutUnits(line.slice(start), maxUnits);
+  const out = window.replace(/\s+/g, ' ').trim();
+  if (!out) return '';
+  const cutTail = start + window.length < line.length;
+  return `${start > 0 ? '…' : ''}${out}${cutTail ? '…' : ''}`;
+}
+
+// Case-insensitive substring search over message source, one hit per matching
+// line. Returns { hits, truncated } — `truncated` when the cap stopped the walk,
+// so the caller can say so rather than presenting a partial list as complete.
+//
+// Tool entries carry no spans and are skipped: their text reaches the panel as
+// ordinary prose, where the editor's own find widget already reaches it. What
+// this adds is the source behind the rendering, which only math really has.
+function searchMessages(messages, query, limit = LIMITS.MAX_SEARCH_HITS) {
+  const hits = [];
+  const list = Array.isArray(messages) ? messages : [];
+  const needle = typeof query === 'string' ? query.toLowerCase() : '';
+  if (!needle) return { hits, truncated: false };
+  let turn = 0;
+  for (let i = 0; i < list.length; i += 1) {
+    const m = list[i];
+    if (!m || typeof m !== 'object') continue;
+    if (m.role === 'user') turn += 1;
+    if (!Array.isArray(m.spans)) continue;
+    const lines = messageSource(m.spans).split('\n');
+    for (let j = 0; j < lines.length; j += 1) {
+      const idx = lines[j].toLowerCase().indexOf(needle);
+      if (idx === -1) continue;
+      if (hits.length >= limit) return { hits, truncated: true };
+      const preview = hitPreview(lines[j], idx);
+      if (!preview) continue; // a match inside whitespace alone has nothing to show
+      hits.push({
+        key: m.key,
+        turn,
+        role: m.role,
+        ts: typeof m.ts === 'string' ? m.ts : '',
+        preview,
+      });
+    }
+  }
+  return { hits, truncated: false };
+}
+
 // Content-block types we know about, so an unfamiliar one can drive the
 // "format may have changed" notice rather than disappearing quietly. These are
 // the Messages API's own block names, which is the documented, versioned side
@@ -436,6 +516,9 @@ module.exports = {
   segment,
   blockToSpans,
   turnPreview,
+  messageSource,
+  hitPreview,
+  searchMessages,
   toolSummary,
   toolResultText,
   clipResult,

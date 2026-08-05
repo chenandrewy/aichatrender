@@ -15,6 +15,7 @@ const {
   pathWithin,
   LineBuffer,
   turnPreview,
+  searchMessages,
   applyToolResults,
   markStalePending,
   trimToTurns,
@@ -50,6 +51,7 @@ function activate(context) {
       followActiveChat(context),
     ),
     vscode.commands.registerCommand('aichatrender.browseTurns', () => browseTurns(context)),
+    vscode.commands.registerCommand('aichatrender.searchSource', () => searchSource(context)),
   );
 }
 
@@ -226,6 +228,49 @@ async function browseTurns(context) {
   }
   const picked = await vscode.window.showQuickPick(items, {
     placeHolder: 'Select a turn to scroll the panel to',
+    matchOnDescription: true,
+  });
+  if (!picked) return;
+  postGoto(picked.key);
+}
+
+// Search the source behind the rendering, rather than the rendering. The panel's
+// own find widget (Cmd+F) covers displayed text, but it cannot match `\theta`,
+// because what is displayed there is θ. This walks the Markdown and LaTeX as
+// written, and reuses the turn picker's goto to scroll the panel to a hit.
+async function searchSource(context) {
+  show(context, true, true);
+  const messages = (follower && follower.messages) || [];
+  if (!messages.length) {
+    vscode.window.showInformationMessage(
+      follower && follower.status
+        ? `AIChatRender: ${follower.status}`
+        : 'AIChatRender: no chat is currently being followed.',
+    );
+    return;
+  }
+  const query = await vscode.window.showInputBox({
+    title: 'AIChatRender: Search Chat Source',
+    prompt: 'Matches Markdown and LaTeX as written, so \\theta finds math that renders as θ.',
+    placeHolder: '\\theta',
+  });
+  if (!query) return; // undefined when dismissed, '' when submitted empty
+  const { hits, truncated } = searchMessages(messages, query);
+  if (!hits.length) {
+    vscode.window.showInformationMessage(
+      `AIChatRender: no match for ${JSON.stringify(query)} in the chat being followed.`,
+    );
+    return;
+  }
+  const items = hits.map((h) => ({
+    label: h.preview,
+    description: `turn ${h.turn} · ${h.role}${h.ts ? ` · ${tsDisplay(h.ts)}` : ''}`,
+    key: h.key,
+  }));
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: truncated
+      ? `First ${items.length} matches — select one to scroll the panel to`
+      : `${items.length} match${items.length === 1 ? '' : 'es'} — select one to scroll the panel to`,
     matchOnDescription: true,
   });
   if (!picked) return;

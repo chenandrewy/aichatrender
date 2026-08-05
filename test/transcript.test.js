@@ -12,6 +12,9 @@ const {
   segment,
   blockToSpans,
   turnPreview,
+  messageSource,
+  hitPreview,
+  searchMessages,
   toolSummary,
   clipResult,
   patchCounts,
@@ -659,6 +662,89 @@ test('trimToTurns: the message backstop bounds a single runaway turn', () => {
   const trimmed = trimToTurns(turnFixture(1, 5000), 100, 500);
   assert.equal(trimmed.length, 500);
   assert.equal(trimmed.filter((m) => m.role === 'user').length, 0);
+});
+
+test('messageSource: math keeps the delimiters that match its mode', () => {
+  assert.equal(
+    messageSource([
+      { t: 'text', s: 'let ' },
+      { t: 'math', m: 'inline', s: '\\theta' },
+      { t: 'text', s: ' vary:\n' },
+      { t: 'math', m: 'display', s: '\\theta^2' },
+    ]),
+    'let $\\theta$ vary:\n$$\\theta^2$$',
+  );
+  assert.equal(messageSource([]), '');
+  assert.equal(messageSource(undefined), '');
+  assert.equal(messageSource([null, { t: 'text' }, { t: 'text', s: 'ok' }]), 'ok');
+});
+
+test('searchMessages: finds LaTeX the rendered panel cannot be searched for', () => {
+  const messages = [
+    { key: 1, role: 'user', ts: '', spans: [{ t: 'text', s: 'what is theta' }] },
+    {
+      key: 2,
+      role: 'assistant',
+      ts: '',
+      spans: [
+        { t: 'text', s: 'the angle\n' },
+        { t: 'math', m: 'inline', s: '\\theta' },
+      ],
+    },
+  ];
+  const { hits, truncated } = searchMessages(messages, '\\theta');
+  assert.equal(truncated, false);
+  assert.equal(hits.length, 1); // the prose "theta" is not a match for "\theta"
+  assert.equal(hits[0].key, 2);
+  assert.equal(hits[0].turn, 1);
+  assert.equal(hits[0].role, 'assistant');
+  assert.equal(hits[0].preview, '$\\theta$');
+});
+
+test('searchMessages: matches case-insensitively, once per line, and counts turns', () => {
+  const messages = [
+    { key: 1, role: 'user', ts: '', spans: [{ t: 'text', s: 'Alpha\nbeta' }] },
+    { key: 2, role: 'tool', ts: '', tool: { name: 'Bash' } }, // no spans: skipped
+    { key: 3, role: 'user', ts: '', spans: [{ t: 'text', s: 'alpha again' }] },
+  ];
+  const { hits } = searchMessages(messages, 'ALPHA');
+  assert.deepEqual(
+    hits.map((h) => [h.key, h.turn, h.preview]),
+    [
+      [1, 1, 'Alpha'],
+      [3, 2, 'alpha again'],
+    ],
+  );
+});
+
+test('searchMessages: an empty query matches nothing, and the cap reports itself', () => {
+  const messages = [{ key: 1, role: 'user', ts: '', spans: [{ t: 'text', s: 'x\nx\nx' }] }];
+  assert.deepEqual(searchMessages(messages, ''), { hits: [], truncated: false });
+  assert.deepEqual(searchMessages(messages, undefined), { hits: [], truncated: false });
+  assert.deepEqual(searchMessages(undefined, 'x'), { hits: [], truncated: false });
+  const capped = searchMessages(messages, 'x', 2);
+  assert.equal(capped.hits.length, 2);
+  assert.equal(capped.truncated, true);
+});
+
+test('hitPreview: windows around the match and marks what it cut', () => {
+  const line = `${'a'.repeat(200)}needle${'b'.repeat(200)}`;
+  const preview = hitPreview(line, 200);
+  assert.equal(preview.startsWith('…'), true);
+  assert.equal(preview.endsWith('…'), true);
+  assert.equal(preview.includes('needle'), true);
+  assert.equal(preview.length, LIMITS.SEARCH_PREVIEW + 2); // the two ellipses
+  // A match near the start keeps its head, and whitespace collapses.
+  assert.equal(hitPreview('  ab   cd  ', 7), 'ab cd');
+  // Nothing but whitespace around the match leaves no label to show.
+  assert.equal(hitPreview('   ', 1), '');
+});
+
+test('hitPreview: never opens on a lone low surrogate', () => {
+  const line = `${'😀'.repeat(30)}needle`;
+  const preview = hitPreview(line, 60);
+  assert.equal(preview.includes('�'), false);
+  assert.equal(/[\udc00-\udfff]/.test(preview.charAt(1)), false);
 });
 
 test('turnPreview: collapses whitespace and keeps math source', () => {

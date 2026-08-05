@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - **Find in the panel.** `Cmd+F` / `Ctrl+F` with the panel focused opens VS
   Code's webview find widget, searching the rendered chat.
+- **AIChatRender: Search Chat Source** searches the Markdown and LaTeX as
+  written, so `\theta` finds math the panel renders as θ — which the find
+  widget cannot match, since the displayed text is the glyph. Hits are listed
+  with their turn number and role, windowed around the match, and picking one
+  scrolls the panel to it. Tool entries are skipped: their text is displayed as
+  prose, so the find widget already reaches it.
 - **Claude Code and Codex CLI tool calls now appear in the panel**, shaped after
   the CLIs' own display: the tool and its primary argument on one line, the
   first few lines of
