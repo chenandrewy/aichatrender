@@ -57,6 +57,17 @@ test('Codex export removes duplicate records and retains session metadata', () =
   const markdown = renderMarkdown(parsed);
   assert.match(markdown, /Commutativity gives/);
   assert.equal((markdown.match(/Commutativity gives/g) || []).length, 1);
+  assert.doesNotMatch(markdown, /synthetic\(\{\}\)|Synthetic output/);
+});
+
+test('Codex tool-only fixture remains absent from Markdown exports', () => {
+  const parsed = parseTranscript(fixture('codex-direct.jsonl'), {
+    provider: 'codex',
+    inputPath: '/private/codex-direct.jsonl',
+  });
+  assert.deepEqual(parsed.messages, []);
+  const markdown = renderMarkdown(parsed);
+  assert.doesNotMatch(markdown, /printf fixture|Process exited|^# A/m);
 });
 
 test('span export handles inline, display, malformed, and plain spans', () => {

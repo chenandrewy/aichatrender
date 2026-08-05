@@ -4,7 +4,7 @@
 
 const path = require('node:path');
 const { LIMITS, parseLine: parseClaudeLine } = require('./transcript');
-const { parseLine: parseCodexLine, sessionMetaFromLine } = require('./codex');
+const { createCodexParser, sessionMetaFromLine } = require('./codex');
 
 const PROVIDERS = new Set(['auto', 'claude', 'codex']);
 const CODEX_RECORD_TYPES = new Set([
@@ -83,6 +83,7 @@ function parseTranscript(raw, options = {}) {
   const provider = requested === 'auto' ? detectProvider(lines, options.inputPath) : requested;
   const metadata = transcriptMetadata(lines, provider);
   const messages = [];
+  const codexParser = provider === 'codex' ? createCodexParser() : undefined;
   let unexpectedRecords = 0;
   let oversizedLines = 0;
   for (const line of lines) {
@@ -93,9 +94,12 @@ function parseTranscript(raw, options = {}) {
     const opts = {
       includeUser: true,
       sessionTimestamp: metadata.sessionTimestamp,
+      cwd: metadata.cwd,
     };
     const parsed =
-      provider === 'codex' ? parseCodexLine(line, opts) : parseClaudeLine(line, opts);
+      provider === 'codex'
+        ? codexParser.parseLine(line, opts)
+        : parseClaudeLine(line, opts);
     if (parsed.unexpected) unexpectedRecords += 1;
     // Tool calls are a panel feature: the export is prose meant to be pasted
     // into a document, so it stays the transcript's conversation alone.

@@ -53,5 +53,9 @@
         "title": "AIChatRender: Browse Turns and Pick"
       }
     ]
+  },
+  "dependencies": {
+    "acorn": "^8.18.0",
+    "acorn-walk": "^8.3.5"
   }
 }

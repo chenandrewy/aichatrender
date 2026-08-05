@@ -8,8 +8,10 @@ const {
   recentSessionDateParts,
   sessionMetaFromLine,
   cachedSessionMeta,
+  createCodexParser,
   parseLine,
 } = require('../codex');
+const { applyToolResults } = require('../transcript');
 
 const OPTS = { includeUser: true, sessionTimestamp: '2026-07-23T17:00:00.000Z' };
 
@@ -17,6 +19,22 @@ function line(type, payload, timestamp) {
   const rec = { type, payload };
   if (timestamp !== undefined) rec.timestamp = timestamp;
   return JSON.stringify(rec);
+}
+
+function parseSession(records, opts = OPTS) {
+  const parser = createCodexParser();
+  const messages = [];
+  let unexpected = false;
+  for (const record of records) {
+    const parsed = parser.parseLine(
+      typeof record === 'string' ? record : JSON.stringify(record),
+      opts,
+    );
+    messages.push(...parsed.messages);
+    applyToolResults(messages, parsed.results);
+    unexpected ||= parsed.unexpected;
+  }
+  return { messages, unexpected };
 }
 
 test('discovery dates: local calendar window is stable at UTC and DST boundaries', () => {
@@ -235,11 +253,9 @@ test('fail-soft: malformed JSON and unexpected consumable shapes', () => {
   );
 });
 
-test('bookkeeping: reasoning, tools, and unknown records are ignored', () => {
+test('bookkeeping: reasoning and unrelated unknown records are ignored', () => {
   for (const sample of [
     line('response_item', { type: 'reasoning', summary: [] }),
-    line('response_item', { type: 'custom_tool_call', name: 'test' }),
-    line('response_item', { type: 'custom_tool_call_output', output: 'test' }),
     line('event_msg', { type: 'token_count' }),
     line('turn_context', { cwd: '/workspace' }),
     line('world_state', {}),
@@ -247,9 +263,14 @@ test('bookkeeping: reasoning, tools, and unknown records are ignored', () => {
   ]) {
     assert.deepEqual(parseLine(sample, OPTS), { messages: [], unexpected: false });
   }
+  assert.equal(
+    parseLine(line('response_item', { type: 'custom_tool_call_output', output: 'test' }), OPTS)
+      .unexpected,
+    true,
+  );
 });
 
-test('fixture: synthetic rollout yields one user and one assistant, without duplicates', () => {
+test('fixture: synthetic rollout keeps prose deduplicated and renders its generic tool', () => {
   const lines = fs
     .readFileSync(path.join(__dirname, 'fixtures', 'rollout.jsonl'), 'utf8')
     .trimEnd()
@@ -258,14 +279,382 @@ test('fixture: synthetic rollout yields one user and one assistant, without dupl
     cwd: '/workspace/example',
     timestamp: '2026-07-23T18:00:00.000Z',
   });
-  const messages = lines.flatMap((raw) => parseLine(raw, OPTS).messages);
+  const { messages } = parseSession(lines);
   assert.deepEqual(
     messages.map((m) => m.role),
-    ['user', 'assistant'],
+    ['user', 'assistant', 'tool'],
   );
   assert.deepEqual(messages[1].spans, [
     { t: 'text', s: 'Commutativity gives ' },
     { t: 'math', m: 'display', s: 'x+y=y+x' },
     { t: 'text', s: '.' },
   ]);
+  assert.deepEqual(messages[2].tool, {
+    id: 'call_1',
+    name: 'synthetic',
+    summary: '{}',
+  });
+  assert.deepEqual(messages[2].result, {
+    text: 'Synthetic output.',
+    more: 0,
+    isError: false,
+  });
+});
+
+test('direct command: pending call joins a stripped successful result', () => {
+  const parser = createCodexParser();
+  const call = parser.parseLine(
+    line('response_item', {
+      type: 'function_call',
+      name: 'exec_command',
+      arguments: JSON.stringify({ cmd: 'npm test', workdir: '/workspace/project' }),
+      call_id: 'call_direct',
+    }),
+    { ...OPTS, cwd: '/workspace/project' },
+  );
+  assert.equal(call.unexpected, false);
+  assert.deepEqual(call.messages[0].tool, {
+    id: 'call_direct',
+    name: 'Bash',
+    summary: 'npm test',
+  });
+  assert.equal(call.messages[0].result, undefined);
+
+  const output = parser.parseLine(
+    line('response_item', {
+      type: 'function_call_output',
+      call_id: 'call_direct',
+      output: [
+        {
+          type: 'input_text',
+          text: 'Chunk ID: abc\nWall time: 0.1 seconds\nProcess exited with code 0\nFinal output:\npassed',
+        },
+      ],
+    }),
+    OPTS,
+  );
+  assert.deepEqual(output.results, [
+    { id: 'call_direct', text: 'passed', more: 0, isError: false },
+  ]);
+  assert.equal(output.unexpected, false);
+});
+
+test('direct command: failures and running sessions retain their status', () => {
+  const failed = parseSession([
+    line('response_item', {
+      type: 'function_call', name: 'exec_command', arguments: '{"cmd":"false"}', call_id: 'bad',
+    }),
+    line('response_item', {
+      type: 'function_call_output', call_id: 'bad',
+      output: 'Process exited with code 7\nFinal output:\npermission denied',
+    }),
+  ]).messages[0];
+  assert.equal(failed.result.isError, true);
+  assert.equal(failed.result.text, 'permission denied');
+
+  const running = parseSession([
+    line('response_item', {
+      type: 'function_call', name: 'exec_command', arguments: '{"cmd":"watch"}', call_id: 'run',
+    }),
+    line('response_item', {
+      type: 'function_call_output', call_id: 'run',
+      output: 'Process running with session ID 42\nLive output:\nstarted',
+    }),
+  ]).messages[0];
+  assert.equal(running.result.isError, false);
+  assert.equal(running.result.text, 'started\n[process continues as session 42]');
+});
+
+test('direct results use the shared clipping limits and duplicate output is inert', () => {
+  const parser = createCodexParser();
+  const messages = [];
+  const call = parser.parseLine(line('response_item', {
+    type: 'function_call', name: 'update_plan', arguments: '{"plan":[]}', call_id: 'clip',
+  }), OPTS);
+  messages.push(...call.messages);
+  const output = parser.parseLine(line('response_item', {
+    type: 'function_call_output', call_id: 'clip',
+    output: Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join('\n'),
+  }), OPTS);
+  applyToolResults(messages, output.results);
+  assert.equal(messages[0].result.text.split('\n').length, 8);
+  assert.equal(messages[0].result.more, 4);
+  assert.deepEqual(
+    parser.parseLine(line('response_item', {
+      type: 'function_call_output', call_id: 'clip', output: 'replacement',
+    }), OPTS),
+    { messages: [], unexpected: false },
+  );
+  assert.match(messages[0].result.text, /^line 1/);
+});
+
+test('direct calls: aliases, relative paths, unknown names, and malformed arguments fail soft', () => {
+  const parser = createCodexParser();
+  const cases = [
+    ['write_stdin', { session_id: 12 }, 'BashOutput', '12'],
+    ['wait', { cell_id: 'cell-7' }, 'Wait', 'cell-7'],
+    ['view_image', { path: '/workspace/project/dev/shot.png' }, 'ViewImage', 'dev/shot.png'],
+    ['update_plan', { plan: [] }, 'UpdatePlan', ''],
+    ['future__tool', { label: 'safe value' }, 'future__tool', 'safe value'],
+  ];
+  cases.forEach(([rawName, input, name, summary], index) => {
+    const parsed = parser.parseLine(
+      line('response_item', {
+        type: 'function_call', raw: true, name: rawName,
+        arguments: JSON.stringify(input), call_id: `alias-${index}`,
+      }),
+      { ...OPTS, cwd: '/workspace/project' },
+    );
+    assert.deepEqual(parsed.messages[0].tool, { id: `alias-${index}`, name, summary });
+  });
+  const malformed = parser.parseLine(
+    line('response_item', {
+      type: 'function_call', name: 'future_tool', arguments: '{', call_id: 'malformed',
+    }),
+    OPTS,
+  );
+  assert.equal(malformed.messages[0].tool.name, 'future_tool');
+  assert.equal(malformed.unexpected, true);
+});
+
+test('content arrays reduce images to a marker and ViewImage collapses it', () => {
+  const parsed = parseSession([
+    line('response_item', {
+      type: 'function_call', name: 'view_image',
+      arguments: '{"path":"/tmp/shot.png"}', call_id: 'image-view',
+    }),
+    line('response_item', {
+      type: 'function_call_output', call_id: 'image-view',
+      output: [{ type: 'input_image', image_url: 'data:image/png;base64,PRIVATE' }],
+    }),
+  ]);
+  assert.deepEqual(parsed.messages[0].result, {
+    text: '', more: 0, isError: false, summary: 'image',
+  });
+  assert.doesNotMatch(JSON.stringify(parsed.messages), /PRIVATE|data:image/);
+});
+
+test('code-mode: one static inner call renders instead of the outer JavaScript', () => {
+  const parsed = parseSession([
+    line('response_item', {
+      type: 'custom_tool_call', name: 'exec', call_id: 'outer',
+      input: "const r = await tools.exec_command({cmd: `pwd`, workdir: '/workspace/project'}); text(r.output);",
+    }),
+    line('response_item', {
+      type: 'custom_tool_call_output', call_id: 'outer',
+      output: [
+        { type: 'input_text', text: 'Script completed\nWall time: 0.1 seconds\nOutput:\n' },
+        { type: 'input_text', text: '/workspace/project' },
+      ],
+    }),
+  ], { ...OPTS, cwd: '/workspace/project' });
+  assert.equal(parsed.unexpected, false);
+  assert.deepEqual(parsed.messages[0].tool, { id: 'outer', name: 'Bash', summary: 'pwd' });
+  assert.equal(parsed.messages[0].result.text, '/workspace/project');
+});
+
+test('code-mode: multi-tool wrappers use an explicit aggregate and drift notice', () => {
+  const parsed = parseSession([
+    line('response_item', {
+      type: 'custom_tool_call', name: 'exec', call_id: 'batch',
+      input: 'const a = tools.exec_command({cmd: "one"}); const b = tools.wait({cell_id: "two"}); text(a); text(b);',
+    }),
+    line('response_item', {
+      type: 'custom_tool_call_output', call_id: 'batch', output: 'Script completed\nOutput:\none\ntwo',
+    }),
+  ]);
+  assert.equal(parsed.unexpected, true);
+  assert.deepEqual(parsed.messages[0].tool, {
+    id: 'batch', name: 'Exec', summary: 'batch: 2 tools',
+  });
+  assert.equal(parsed.messages[0].result.text, 'one\ntwo');
+});
+
+test('parser reset drops pending state and duplicate or unmatched outputs stay ignored', () => {
+  const parser = createCodexParser();
+  parser.parseLine(line('response_item', {
+    type: 'function_call', name: 'update_plan', arguments: '{"plan":[]}', call_id: 'old',
+  }), OPTS);
+  parser.reset();
+  assert.deepEqual(
+    parser.parseLine(line('response_item', {
+      type: 'function_call_output', call_id: 'old', output: 'late',
+    }), OPTS),
+    { messages: [], unexpected: false },
+  );
+});
+
+test('patch events render one cwd-relative card per add, edit, delete, and move', () => {
+  const parsed = parseSession([
+    line('event_msg', {
+      type: 'patch_apply_end', call_id: 'patch-1', success: true, status: 'completed',
+      changes: {
+        '/workspace/project/new.txt': {
+          type: 'add', content: 'one\ntwo\n',
+          unified_diff: '--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1,2 @@\n+one\n+two',
+        },
+        '/workspace/project/edit.txt': {
+          type: 'update',
+          unified_diff: '--- a/edit.txt\n+++ b/edit.txt\n@@ -4,2 +4,2 @@\n-old\n+new\n same',
+        },
+        '/workspace/project/delete.txt': {
+          type: 'delete',
+          unified_diff: '--- a/delete.txt\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-one\n-two',
+        },
+        '/workspace/project/old.txt': {
+          type: 'update', move_path: '/workspace/project/moved.txt',
+          unified_diff: '--- a/old.txt\n+++ b/moved.txt\n@@ -1 +1 @@\n-old\n+new',
+        },
+      },
+    }),
+  ], { ...OPTS, cwd: '/workspace/project' });
+  assert.equal(parsed.unexpected, false);
+  assert.deepEqual(parsed.messages.map((message) => message.tool.name), [
+    'Write', 'Edit', 'Delete', 'Edit',
+  ]);
+  assert.deepEqual(parsed.messages.map((message) => message.tool.summary), [
+    'new.txt', 'edit.txt', 'delete.txt', 'old.txt → moved.txt',
+  ]);
+  assert.equal(parsed.messages[0].result.summary, 'Wrote 2 lines');
+  assert.equal(parsed.messages[1].result.summary, 'Added 1 line, removed 1 line');
+  assert.equal(parsed.messages[1].result.diff.lines[0].n, 4);
+  assert.equal(parsed.messages[2].result.summary, 'Removed 2 lines');
+  assert.equal(
+    parsed.messages[3].result.summary,
+    'Added 1 line, removed 1 line; Moved to moved.txt',
+  );
+});
+
+test('failed and malformed patch events show a reason and format drift', () => {
+  const failed = parseSession([
+    line('event_msg', {
+      type: 'patch_apply_end', call_id: 'patch-bad', success: false,
+      stderr: 'context did not match', changes: {},
+    }),
+  ]);
+  assert.equal(failed.messages[0].result.isError, true);
+  assert.equal(failed.messages[0].result.text, 'context did not match');
+
+  const malformed = parseSession([
+    line('event_msg', {
+      type: 'patch_apply_end', call_id: 'patch-drift', success: true,
+      stdout: 'Applied with an unfamiliar diff.',
+      changes: {
+        '/workspace/project/file.txt': { type: 'update', unified_diff: 'future diff' },
+      },
+    }),
+  ], { ...OPTS, cwd: '/workspace/project' });
+  assert.equal(malformed.unexpected, true);
+  assert.equal(malformed.messages[0].result.text, 'Applied with an unfamiliar diff.');
+});
+
+test('event-backed wrapper patch suppresses the generic outer card', () => {
+  const parsed = parseSession([
+    line('response_item', {
+      type: 'custom_tool_call', name: 'exec', call_id: 'outer-patch',
+      input: 'const patch = "*** Begin Patch\\n*** End Patch"; const r = await tools.apply_patch(patch); text(r);',
+    }),
+    line('event_msg', {
+      type: 'patch_apply_end', call_id: 'exec-internal', success: true,
+      changes: {
+        '/workspace/project/a.txt': {
+          type: 'update', unified_diff: '@@ -1 +1 @@\n-old\n+new',
+        },
+      },
+    }),
+    line('response_item', {
+      type: 'custom_tool_call_output', call_id: 'outer-patch',
+      output: 'Script completed\nOutput:\nDone!',
+    }),
+  ], { ...OPTS, cwd: '/workspace/project' });
+  assert.deepEqual(parsed.messages.map((message) => message.tool.name), ['Edit']);
+  assert.equal(parsed.messages[0].tool.id, 'exec-internal:0');
+});
+
+test('web, MCP, and image-generation completion events stay visible and safe', () => {
+  const parsed = parseSession([
+    line('event_msg', {
+      type: 'web_search_end', call_id: 'web-1', query: 'safe query',
+      results: [{ title: 'one' }, { title: 'two' }], status: 'completed',
+    }),
+    line('response_item', { type: 'web_search_call', call_id: 'web-1', query: 'safe query' }),
+    line('event_msg', {
+      type: 'mcp_tool_call_end', call_id: 'mcp-1', status: 'completed',
+      invocation: { server: 'papers', tool: 'lookup', arguments: { doi: '10/example' } },
+      result: { content: [{ type: 'text', text: 'found' }] },
+    }),
+    line('event_msg', {
+      type: 'image_generation_end', call_id: 'img-1', status: 'completed',
+      saved_path: '/workspace/project/dev/figure.png',
+      result: { image_url: 'data:image/png;base64,SECRET' },
+    }),
+  ], { ...OPTS, cwd: '/workspace/project' });
+  assert.equal(parsed.unexpected, false);
+  assert.deepEqual(parsed.messages.map((message) => message.tool.name), [
+    'WebSearch', 'papers.lookup', 'ImageGeneration',
+  ]);
+  assert.equal(parsed.messages[0].result.summary, '2 results');
+  assert.equal(parsed.messages[1].result.text, 'found');
+  assert.equal(parsed.messages[2].result.summary, 'Saved dev/figure.png');
+  assert.doesNotMatch(JSON.stringify(parsed.messages), /SECRET|data:image/);
+});
+
+test('MCP failures preserve structured error text', () => {
+  const parsed = parseSession([
+    line('event_msg', {
+      type: 'mcp_tool_call_end', call_id: 'mcp-bad', status: 'failed',
+      invocation: { server: 'db', tool: 'query', arguments: { sql: 'select' } },
+      result: { isError: true, message: 'access denied' },
+    }),
+  ]);
+  assert.equal(parsed.messages[0].result.isError, true);
+  assert.equal(parsed.messages[0].result.text, 'access denied');
+});
+
+test('pending state is bounded and eviction raises drift without breaking later calls', () => {
+  const parser = createCodexParser();
+  let final;
+  for (let index = 0; index <= 512; index += 1) {
+    final = parser.parseLine(line('response_item', {
+      type: 'function_call', name: 'update_plan', arguments: '{"plan":[]}',
+      call_id: `pending-${index}`,
+    }), OPTS);
+  }
+  assert.equal(final.unexpected, true);
+  assert.deepEqual(
+    parser.parseLine(line('response_item', {
+      type: 'function_call_output', call_id: 'pending-0', output: 'late',
+    }), OPTS),
+    { messages: [], unexpected: false },
+  );
+  assert.equal(
+    parser.parseLine(line('response_item', {
+      type: 'function_call_output', call_id: 'pending-512', output: 'done',
+    }), OPTS).results[0].text,
+    'done',
+  );
+});
+
+test('sanitized tool fixtures cover direct, wrapper, batch, patch, events, and drift', () => {
+  const expected = {
+    'codex-direct.jsonl': ['Bash'],
+    'codex-wrapper.jsonl': ['Bash'],
+    'codex-batch.jsonl': ['Exec'],
+    'codex-patch.jsonl': ['Edit'],
+    'codex-events.jsonl': ['WebSearch', 'fixture.lookup'],
+    'codex-malformed.jsonl': ['Exec'],
+  };
+  for (const [name, tools] of Object.entries(expected)) {
+    const lines = fs
+      .readFileSync(path.join(__dirname, 'fixtures', name), 'utf8')
+      .trimEnd()
+      .split('\n');
+    const parsed = parseSession(lines, { ...OPTS, cwd: '/workspace/synthetic' });
+    assert.deepEqual(
+      parsed.messages.filter((message) => message.role === 'tool').map((message) => message.tool.name),
+      tools,
+      name,
+    );
+    if (name.includes('batch') || name.includes('malformed')) assert.equal(parsed.unexpected, true);
+  }
 });

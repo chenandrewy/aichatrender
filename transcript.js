@@ -5,6 +5,18 @@
 'use strict';
 
 const path = require('path');
+const {
+  TOOL_LIMITS,
+  toolSummary,
+  toolResultText,
+  clipResult,
+  patchCounts,
+  diffLines,
+  writtenLines,
+  presentResult,
+  markStalePending,
+  applyToolResults,
+} = require('./tool-presentation');
 
 const LIMITS = {
   MAX_TEXT: 128 * 1024, // chars kept per message (truncate beyond, with marker)
@@ -16,11 +28,7 @@ const LIMITS = {
   MAX_MESSAGES: 3000, // redraw ceiling under MAX_TURNS (see trimToTurns)
   MAX_REBUILD_BYTES: 10 * 1024 * 1024, // tail read on whole-file rebuild
   TURN_PREVIEW: 80, // UTF-16 units of a user prompt shown in the turn picker
-  TOOL_SUMMARY: 160, // UTF-16 units of a tool call's primary argument
-  TOOL_RESULT_LINES: 8, // result lines shown before the "+N lines" marker
-  TOOL_RESULT_CHARS: 2048, // chars kept of a result, however few lines that is
-  TOOL_DIFF_LINES: 40, // diff lines rendered before the "+N lines" marker
-  TOOL_DIFF_COLS: 400, // chars kept of a single diff line
+  ...TOOL_LIMITS,
 };
 
 // Claude Code's project-directory munge: every non-alphanumeric character of the
@@ -277,257 +285,6 @@ function turnPreview(spans, maxUnits = LIMITS.TURN_PREVIEW) {
 // text. Observed across 6,700 tool calls: nothing else appears today.
 const ASSISTANT_BLOCKS = new Set(['text', 'thinking', 'tool_use']);
 const USER_BLOCKS = new Set(['tool_result', 'text', 'image', 'document']);
-
-// ------------------------------------------------------------------ tool calls
-
-// The input field each tool is identified by in the CLI's own transcript, so a
-// call reads the way the terminal shows it: Bash by its command, Read by its
-// path. First key present wins. A tool absent here (or an MCP tool, whose names
-// are not knowable in advance) falls back to the first short string in its
-// input, which is usually the interesting one; failing that, the call shows its
-// name alone rather than nothing.
-const TOOL_PRIMARY = {
-  Agent: ['description'],
-  Bash: ['command'],
-  BashOutput: ['bash_id'],
-  Edit: ['file_path'],
-  Glob: ['pattern'],
-  Grep: ['pattern'],
-  KillShell: ['shell_id'],
-  NotebookEdit: ['notebook_path'],
-  Read: ['file_path'],
-  Skill: ['skill'],
-  SlashCommand: ['command'],
-  Task: ['description'],
-  TodoWrite: [],
-  ToolSearch: ['query'],
-  WebFetch: ['url'],
-  WebSearch: ['query'],
-  Write: ['file_path'],
-};
-
-// One-line rendering of a call's arguments. Whitespace collapses so a heredoc
-// or a multi-line command stays one line, as it does in the terminal. Paths
-// under the session's own cwd are shown relative to it, again as the terminal
-// does — the absolute prefix is the same on every line and only costs width.
-function toolSummary(name, input, cwd) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return '';
-  const keys = TOOL_PRIMARY[name];
-  let raw = '';
-  if (keys) {
-    for (const k of keys) {
-      if (typeof input[k] === 'string' && input[k].trim() !== '') {
-        raw = input[k];
-        break;
-      }
-    }
-  }
-  // Fall through to the generic scan when a mapped key finds nothing: a known
-  // tool whose input schema was renamed under us would otherwise render with a
-  // blank argument, which reads as a bug rather than as drift. An empty mapping
-  // (TodoWrite) means "no argument worth showing" and is left alone.
-  if (raw === '' && (!keys || keys.length > 0)) {
-    for (const v of Object.values(input)) {
-      // A long string is a payload (file contents, a patch), not a label.
-      if (typeof v === 'string' && v.trim() !== '' && v.length <= LIMITS.TOOL_SUMMARY * 4) {
-        raw = v;
-        break;
-      }
-    }
-  }
-  if (typeof cwd === 'string' && cwd !== '' && raw.startsWith(`${cwd}/`)) {
-    raw = raw.slice(cwd.length + 1);
-  }
-  const flat = raw.replace(/\s+/g, ' ').trim();
-  if (flat.length <= LIMITS.TOOL_SUMMARY) return flat;
-  return `${cutUnits(flat, LIMITS.TOOL_SUMMARY).trimEnd()}…`;
-}
-
-// A tool_result's content is a string in most records and a content-block array
-// in the rest (Read of an image, tools that return mixed parts). Non-text parts
-// are named rather than dropped, so a result never renders as blank when
-// something was in fact returned.
-function toolResultText(content) {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
-  const parts = [];
-  for (const b of content) {
-    if (!b || typeof b !== 'object') continue;
-    if (b.type === 'text' && typeof b.text === 'string') parts.push(b.text);
-    else if (typeof b.type === 'string') parts.push(`[${b.type}]`);
-  }
-  return parts.join('\n');
-}
-
-// Clips a result to the terminal's shape: a few lines, then a count of what was
-// left unread. Trailing blank lines are dropped first so they don't spend the
-// line budget or inflate the marker.
-function clipResult(text) {
-  const trimmed = text.replace(/\s+$/, '');
-  if (trimmed === '') return { text: '', more: 0 };
-  const lines = trimmed.split('\n');
-  const kept = lines.slice(0, LIMITS.TOOL_RESULT_LINES);
-  let more = lines.length - kept.length;
-  let out = kept.join('\n');
-  if (out.length > LIMITS.TOOL_RESULT_CHARS) {
-    out = cutUnits(out, LIMITS.TOOL_RESULT_CHARS);
-    // The char cap can cut mid-line; that partial line is still shown, so count
-    // only the lines it removed outright.
-    more = lines.length - out.split('\n').length;
-  }
-  return { text: out, more: more > 0 ? more : 0 };
-}
-
-// Counts the changed lines in a structuredPatch — the one field this module
-// takes from `toolUseResult`, the CLI's internal sidecar. Over 34 observed CLI
-// versions that record only ever gained keys, and `structuredPatch` was present
-// in every variant; even so, anything unrecognized returns undefined and the
-// caller falls back to the tool_result text, which is the documented channel.
-function patchCounts(structuredPatch) {
-  if (!Array.isArray(structuredPatch) || structuredPatch.length === 0) return undefined;
-  let added = 0;
-  let removed = 0;
-  for (const hunk of structuredPatch) {
-    if (!hunk || !Array.isArray(hunk.lines)) continue;
-    for (const line of hunk.lines) {
-      if (typeof line !== 'string') continue;
-      if (line.startsWith('+')) added += 1;
-      else if (line.startsWith('-')) removed += 1;
-    }
-  }
-  return added || removed ? { added, removed } : undefined;
-}
-
-// Flattens a structuredPatch into rendered diff lines, numbered as the CLI
-// numbers them: a removed line carries its number in the old file, an added or
-// unchanged line its number in the new one. Hunks are separated by a gap marker
-// rather than a @@ header, matching what the terminal draws.
-//
-// Two passes, because the budget has to be spent on visible lines: build
-// everything, then cut. Real patches are small enough for that to be free —
-// median 12 lines over 1291 observed patches, p99 248.
-function diffLines(structuredPatch, budget = LIMITS.TOOL_DIFF_LINES) {
-  if (!Array.isArray(structuredPatch) || structuredPatch.length === 0) return undefined;
-  const all = [];
-  for (const hunk of structuredPatch) {
-    if (!hunk || !Array.isArray(hunk.lines) || hunk.lines.length === 0) continue;
-    let oldNo = Number.isFinite(hunk.oldStart) ? hunk.oldStart : 0;
-    let newNo = Number.isFinite(hunk.newStart) ? hunk.newStart : 0;
-    if (all.length) all.push({ gap: true });
-    for (const raw of hunk.lines) {
-      if (typeof raw !== 'string') continue;
-      const k = raw[0] === '+' || raw[0] === '-' ? raw[0] : ' ';
-      let s = raw.slice(1);
-      if (s.length > LIMITS.TOOL_DIFF_COLS) s = `${cutUnits(s, LIMITS.TOOL_DIFF_COLS)}…`;
-      if (k === '-') {
-        all.push({ k, n: oldNo, s });
-        oldNo += 1;
-      } else if (k === '+') {
-        all.push({ k, n: newNo, s });
-        newNo += 1;
-      } else {
-        all.push({ k, n: newNo, s }); // unchanged: numbered in the new file
-        oldNo += 1;
-        newNo += 1;
-      }
-    }
-  }
-  if (!all.some((l) => !l.gap)) return undefined;
-  let shown = 0;
-  for (let i = 0; i < all.length; i += 1) {
-    if (all[i].gap) continue;
-    shown += 1;
-    if (shown === budget) {
-      const rest = all.slice(i + 1);
-      const more = rest.filter((l) => !l.gap).length;
-      if (!more) break; // the budget landed exactly on the end
-      const lines = all.slice(0, i + 1);
-      return { lines, more };
-    }
-  }
-  return { lines: all, more: 0 };
-}
-
-// A new file has nothing to diff against, so its patch comes back empty and the
-// size has to come from the written content instead. `content` is Write's own
-// always-present field and is absent from Edit's record, so its presence is
-// also what distinguishes the two. Same sidecar, same fail-soft rule.
-function writtenLines(content) {
-  if (typeof content !== 'string') return undefined;
-  const trimmed = content.replace(/\s+$/, '');
-  return trimmed === '' ? undefined : trimmed.split('\n').length;
-}
-
-function plural(n, noun) {
-  return `${n} ${n === 1 ? noun : `${noun}s`}`;
-}
-
-// Tools whose output is a file the reader is not reading right now. The panel
-// reports that the call happened and how much came back; the terminal hides
-// these behind an expand key for the same reason. Derived from the tool_result
-// block itself, so the collapse costs no dependency on the sidecar.
-const COLLAPSED_TOOLS = new Set(['Read']);
-
-// Final shape of a result, once its call is known. A file edit becomes its line
-// counts, a file read becomes its size, and everything else keeps the clipped
-// output — which for Bash is already exactly what the terminal shows, since
-// there the documented channel *is* stdout.
-function presentResult(name, res) {
-  const base = { text: res.text, more: res.more, isError: res.isError };
-  if (res.patch) {
-    const { added, removed } = res.patch;
-    const parts = [];
-    if (added) parts.push(`Added ${plural(added, 'line')}`);
-    if (removed) parts.push(`${added ? 'removed' : 'Removed'} ${plural(removed, 'line')}`);
-    return {
-      text: '',
-      more: 0,
-      isError: res.isError,
-      summary: parts.join(', '),
-      diff: res.diff,
-    };
-  }
-  if (res.wrote) {
-    // Otherwise a new file reports "File created successfully at: <path>",
-    // which only repeats the path already on the call line.
-    return { text: '', more: 0, isError: res.isError, summary: `Wrote ${plural(res.wrote, 'line')}` };
-  }
-  // An error carries the reason in its text; never collapse that away.
-  if (!COLLAPSED_TOOLS.has(name) || res.isError) return base;
-  if (res.text === '[image]') return { text: '', more: 0, isError: false, summary: 'image' };
-  const lines = res.text ? res.text.split('\n').length + res.more : 0;
-  if (!lines) return base;
-  return { text: '', more: 0, isError: false, summary: plural(lines, 'line') };
-}
-
-// Marks calls that will never be answered. A call is pending until its result
-// arrives, but once the user has spoken again the exchange has moved on, so a
-// perpetual "running…" would be indistinguishable from the panel having lost
-// track of the format. `result` is left undefined so a late result still binds.
-function markStalePending(messages) {
-  let laterUserTurn = false;
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const m = messages[i];
-    if (m.role === 'user') laterUserTurn = true;
-    else if (m.role === 'tool' && m.result === undefined && laterUserTurn) m.stale = true;
-  }
-}
-
-// Attaches results to the calls they belong to, by tool_use_id. A result whose
-// call has already been trimmed out of the retained window simply finds nothing.
-// Scans backwards: a call is answered within a turn or two of being made.
-function applyToolResults(messages, results) {
-  if (!Array.isArray(results) || results.length === 0) return;
-  for (const res of results) {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const m = messages[i];
-      if (m.role === 'tool' && m.tool.id === res.id && m.result === undefined) {
-        m.result = presentResult(m.tool.name, res);
-        break;
-      }
-    }
-  }
-}
 
 // ---------------------------------------------------------------- retention
 
