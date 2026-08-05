@@ -11,7 +11,7 @@ const {
   createCodexParser,
   parseLine,
 } = require('../codex');
-const { applyToolResults } = require('../transcript');
+const { LIMITS, applyToolResults } = require('../transcript');
 
 const OPTS = { includeUser: true, sessionTimestamp: '2026-07-23T17:00:00.000Z' };
 
@@ -386,6 +386,31 @@ test('direct results use the shared clipping limits and duplicate output is iner
     { messages: [], unexpected: false },
   );
   assert.match(messages[0].result.text, /^line 1/);
+});
+
+test('direct command: long JSONL stdout is visibly shortened per line', () => {
+  const jsonl = Array.from({ length: 5 }, (_, index) =>
+    `${index + 1}:${JSON.stringify({ message: 'x'.repeat(700) })}`,
+  ).join('\n');
+  const parsed = parseSession([
+    line('response_item', {
+      type: 'function_call', name: 'exec_command', arguments: '{"cmd":"rg -n pattern log.jsonl"}',
+      call_id: 'long-jsonl',
+    }),
+    line('response_item', {
+      type: 'function_call_output', call_id: 'long-jsonl',
+      output: `Process exited with code 0\nFinal output:\n${jsonl}`,
+    }),
+  ]);
+
+  const result = parsed.messages[0].result;
+  const shown = result.text.split('\n');
+  assert.equal(parsed.unexpected, false);
+  assert.equal(parsed.messages[0].tool.name, 'Bash');
+  assert.equal(shown.length, 5);
+  assert.equal(shown.every((item) => item.length <= LIMITS.TOOL_RESULT_COLS + 1), true);
+  assert.equal(shown.every((item) => item.endsWith('…')), true);
+  assert.equal(result.more, 0);
 });
 
 test('direct calls: aliases, relative paths, unknown names, and malformed arguments fail soft', () => {

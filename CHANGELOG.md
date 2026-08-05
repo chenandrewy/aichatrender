@@ -90,6 +90,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Tool-result previews now shorten each overlong output line with a visible
+  ellipsis. A few wide lines, such as JSONL records printed by a Codex Bash
+  call, no longer expand into a large wrapped block or get cut mid-line without
+  any indication; the existing "+N lines" note still counts only wholly omitted
+  lines.
 - Codex rollouts started in a *subdirectory* of the workspace folder are now
   discovered. Codex matching required the recorded cwd to equal the workspace
   root exactly, while Claude had always accepted any cwd beneath it; a Codex

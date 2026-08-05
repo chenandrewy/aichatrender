@@ -395,10 +395,19 @@ test('clipResult: short output is shown whole, blank output is empty', () => {
   assert.deepEqual(clipResult('a\nb\n\n\n'), { text: 'a\nb', more: 0 });
 });
 
-test('clipResult: the char cap counts only the lines it removed outright', () => {
+test('clipResult: overlong lines are shortened visibly without hiding later lines', () => {
   const clipped = clipResult(`${'x'.repeat(5000)}\nsecond\nthird`);
-  assert.equal(clipped.text.length, LIMITS.TOOL_RESULT_CHARS);
-  assert.equal(clipped.more, 2); // the cut line is still shown, partially
+  assert.equal(
+    clipped.text,
+    `${'x'.repeat(LIMITS.TOOL_RESULT_COLS)}…\nsecond\nthird`,
+  );
+  assert.equal(clipped.more, 0);
+});
+
+test('clipResult: a shortened line never ends with a lone surrogate', () => {
+  const clipped = clipResult(`${'a'.repeat(LIMITS.TOOL_RESULT_COLS - 1)}😀 tail`);
+  assert.equal(clipped.text, `${'a'.repeat(LIMITS.TOOL_RESULT_COLS - 1)}…`);
+  assert.equal(clipped.text.includes('�'), false);
 });
 
 test('tool_result records join onto the call by id, marking errors', () => {

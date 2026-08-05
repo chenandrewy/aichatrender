@@ -6,6 +6,7 @@
 const TOOL_LIMITS = {
   TOOL_SUMMARY: 160, // UTF-16 units of a tool call's primary argument
   TOOL_RESULT_LINES: 8, // result lines shown before the "+N lines" marker
+  TOOL_RESULT_COLS: 160, // chars kept from each result line before a visible ellipsis
   TOOL_RESULT_CHARS: 2048, // chars kept of a result, however few lines that is
   TOOL_DIFF_LINES: 40, // diff lines rendered before the "+N lines" marker
   TOOL_DIFF_COLS: 400, // chars kept of a single diff line
@@ -106,12 +107,17 @@ function clipResult(text) {
   const trimmed = safe.replace(/\s+$/, '');
   if (trimmed === '') return { text: '', more: 0 };
   const lines = trimmed.split('\n');
-  const kept = lines.slice(0, TOOL_LIMITS.TOOL_RESULT_LINES);
-  let more = lines.length - kept.length;
+  const kept = lines.slice(0, TOOL_LIMITS.TOOL_RESULT_LINES).map((line) =>
+    line.length > TOOL_LIMITS.TOOL_RESULT_COLS
+      ? `${cutUnits(line, TOOL_LIMITS.TOOL_RESULT_COLS)}…`
+      : line,
+  );
+  const more = lines.length - kept.length;
   let out = kept.join('\n');
+  // The line and column limits currently make this unreachable, but retain a
+  // visible hard backstop if those limits ever change independently.
   if (out.length > TOOL_LIMITS.TOOL_RESULT_CHARS) {
-    out = cutUnits(out, TOOL_LIMITS.TOOL_RESULT_CHARS);
-    more = lines.length - out.split('\n').length;
+    out = `${cutUnits(out, TOOL_LIMITS.TOOL_RESULT_CHARS - 1)}…`;
   }
   return { text: out, more: more > 0 ? more : 0 };
 }
