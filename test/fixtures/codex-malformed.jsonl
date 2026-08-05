@@ -1,0 +1,5 @@
+{"timestamp":"2026-08-05T12:05:00.000Z","type":"session_meta","payload":{"type":"session_meta","cwd":"/workspace/synthetic","timestamp":"2026-08-05T12:05:00.000Z","id":"fixture-malformed"}}
+{"timestamp":"2026-08-05T12:05:01.000Z","type":"event_msg","payload":{"type":"user_message","message":"Synthetic prompt.","images":[]}}
+{"not valid json
+{"timestamp":"2026-08-05T12:05:02.000Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"malformed-1","input":"tools.exec_command({"}}
+{"timestamp":"2026-08-05T12:05:03.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Synthetic answer."}]}}

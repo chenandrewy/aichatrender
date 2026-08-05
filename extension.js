@@ -23,7 +23,7 @@ const {
 const {
   recentSessionDateParts,
   cachedSessionMeta,
-  parseLine: parseCodexLine,
+  createCodexParser,
 } = require('./codex');
 const {
   candidateForProcessTree,
@@ -285,6 +285,8 @@ function startFollower() {
     source: undefined,
     pinned: undefined,
     sessionTimestamp: '',
+    sessionCwd: '',
+    codexParser: createCodexParser(),
     lastIno: -1,
     lastSize: 0,
     lineBuf: new LineBuffer(),
@@ -466,6 +468,7 @@ function discoverCodexCandidates() {
         source: 'codex',
         mtimeMs: st.mtimeMs,
         sessionTimestamp: meta.timestamp,
+        cwd: meta.cwd,
       });
     }
   }
@@ -505,6 +508,7 @@ function selectFile(candidate) {
   if (p === follower.file && (!candidate || candidate.source === follower.source)) {
     if (candidate) {
       follower.sessionTimestamp = candidate.sessionTimestamp || '';
+      follower.sessionCwd = candidate.cwd || '';
       poll();
     }
     return;
@@ -513,6 +517,8 @@ function selectFile(candidate) {
   follower.file = p;
   follower.source = candidate && candidate.source;
   follower.sessionTimestamp = (candidate && candidate.sessionTimestamp) || '';
+  follower.sessionCwd = (candidate && candidate.cwd) || '';
+  follower.codexParser = createCodexParser();
   follower.lastIno = -1;
   follower.lastSize = 0;
   follower.lineBuf.reset();
@@ -559,6 +565,7 @@ function poll() {
 function rebuild(fd, st) {
   follower.messages = [];
   follower.lineBuf.reset();
+  follower.codexParser.reset();
   follower.unexpected = false;
   let offset = 0;
   if (st.size > LIMITS.MAX_REBUILD_BYTES) {
@@ -588,10 +595,11 @@ function readRange(fd, from, to) {
     const opts = {
       includeUser: INCLUDE_USER,
       sessionTimestamp: follower.sessionTimestamp,
+      cwd: follower.sessionCwd,
     };
     const r =
       follower.source === 'codex'
-        ? parseCodexLine(line, opts)
+        ? follower.codexParser.parseLine(line, opts)
         : parseClaudeLine(line, opts);
     if (r.unexpected) follower.unexpected = true;
     for (const m of r.messages) {

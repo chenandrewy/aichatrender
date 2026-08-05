@@ -1,8 +1,9 @@
 # Developing AIChatRender
 
-No build step and no runtime dependencies. The vendored KaTeX under
-`media/katex/` is committed as-is; see `media/katex/VENDOR.md` for its pinned
-version.
+No build step. Runtime dependencies are limited to Acorn and Acorn Walk for
+static, non-executing analysis of Codex wrapper records. The vendored KaTeX
+under `media/katex/` is committed as-is; see `media/katex/VENDOR.md` for its
+pinned version.
 
 ## Tests
 
@@ -10,8 +11,9 @@ version.
 node --test test/*.test.js
 ```
 
-Pure-parser and process-helper tests use synthetic fixtures. The larger real
-transcripts under `test/fixtures/chat-examples/` are for manual live testing;
+Pure-parser and process-helper tests use synthetic fixtures, including compact
+Codex direct/wrapper/event variants. The larger real transcripts under
+`test/fixtures/chat-examples/` are for manual live testing;
 they are not loaded by the parser test suite. CI runs on Linux and macOS, which
 matters: `active-terminal.js` reads `/proc` on Linux and shells out to
 `pgrep`/`lsof`/`ps` on macOS, and only a macOS runner exercises the latter.

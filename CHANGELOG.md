@@ -23,8 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **Claude Code tool calls now appear in the panel**, shaped after the CLI's own
-  display: the tool and its primary argument on one line, the first few lines of
+- **Claude Code and Codex CLI tool calls now appear in the panel**, shaped after
+  the CLIs' own display: the tool and its primary argument on one line, the
+  first few lines of
   its result under it, and a count of the lines not shown. Failed calls are
   marked and keep their reason. Paths inside the session's working directory are
   shown relative to it. Results are clipped as they are read, so a chat full of
@@ -48,10 +49,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   panel having lost track of the transcript format.
 - An unrecognized content block now raises the existing "transcript format may
   have changed" notice instead of vanishing from the panel silently.
-- Codex CLI sessions are unaffected: its rollouts record a tool call as a
-  JavaScript program inside a string, with the human-readable labels in a
-  separate event stream keyed by a different id space, so the same treatment
-  needs its own parser. Codex prose renders exactly as it did before.
+- **Codex direct calls and current code-mode wrappers are normalized into the
+  shared tool renderer.** Wrapper JavaScript is parsed but never executed; only
+  literal data and simple immutable `const` bindings are resolved. A single
+  inner call gets its own card, while ambiguous multi-tool wrappers use an
+  explicit `Exec` batch and raise the format-drift notice rather than guessing
+  which output belongs to which call.
+- Codex patch, web-search, MCP, and image-generation completion events render
+  from their richer side-channel data. Patches produce one cwd-relative card per
+  file with added/removed counts and numbered diffs; image bytes and data URLs
+  are reduced to inert summaries and never retained in panel history.
+- Codex parser state is per transcript, reset on file switches and rebuilds, and
+  bounded to 512 pending calls. Unknown tool names still render generically;
+  unfamiliar tool-output records fail soft and surface the existing drift
+  notice. Markdown exports remain prose-only for both providers.
 - Copying rendered transcript content now writes the corresponding Markdown to
   the plain-text clipboard. Headings, bold and italic emphasis, blockquotes,
   ordered and unordered lists, inline and fenced code, rules, tables, and math

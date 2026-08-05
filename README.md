@@ -39,8 +39,9 @@ a terminal is unreadable, and copying an equation out of one is worse.
   bold/italic, inline and fenced code, and `| a | b |` tables (with column
   alignment and math inside cells). Raw HTML and Markdown links stay inert
   text — see below.
-- **Shows Claude Code's tool calls** the way the terminal does: the tool and its
-  primary argument on one line, the first lines of its result beneath it, and a
+- **Shows Claude Code and Codex CLI tool calls** in the terminal's visual
+  language: the tool and its primary argument on one line, the first lines of
+  its result beneath it, and a
   count of what was left unread. Commands show their output; a file read
   collapses to its size; a file edit reports its added and removed line counts
   and draws the diff beneath them, numbered by line and coloured with the
@@ -48,9 +49,10 @@ a terminal is unreadable, and copying an equation out of one is worse.
   calls are marked and keep their reason. A call still running says
   so, and says instead that no result was recorded once the chat has moved past
   it — so a shift in the transcript format reads as a shift, not as a hang.
-  Codex CLI sessions show prose only: its rollouts describe a tool call as a
-  JavaScript program inside a string, with the readable labels in a separate
-  event stream, so it needs its own parser.
+  Codex commands, file changes, web searches, MCP calls, image views, and image
+  generation are normalized from the rollout's direct, wrapper, and completion
+  event formats. Ambiguous multi-tool wrappers appear as an explicit `Exec`
+  batch instead of attributing output to the wrong call.
 - Shows assistant text and real user prompts from the newest 100 user turns.
   Thinking blocks, subagent traffic, and harness bookkeeping are skipped.
 
@@ -91,6 +93,12 @@ precise about the scope.
   never run through the Markdown or math renderers at all. Only math source
   reaches KaTeX (`trust: false`, `throwOnError: false`), under a strict CSP with
   nonce'd scripts, failing soft on malformed records.
+- **Codex wrapper programs are never executed.** AIChatRender parses their
+  JavaScript syntax with bounded static analysis and accepts only literal data
+  (plus simple immutable `const` bindings). Dynamic expressions, computed
+  properties, mutation, and unfamiliar block types raise the format-drift
+  notice. Image blocks become the text marker `[image]`; data URLs never enter
+  panel history or the webview.
 
 The inert-Markdown choice is deliberate. Rendering links or HTML out of a
 transcript would turn model output into a clickable surface inside your editor,
@@ -107,13 +115,19 @@ which is exactly what this panel is trying not to be.
 ## Known limitations
 
 - Exactly one workspace folder.
-- Automatic discovery does not follow sessions started from a subdirectory, but
-  **Follow Active Terminal Chat** can select one whose real cwd is inside the
-  workspace.
 - No source toggle: with concurrent Claude and Codex sessions, the panel follows
   whichever matching file changed last unless you pin one.
 - Codex discovery scans only the last seven date directories, plus tomorrow as a
   cross-time-zone guard. Older rollouts are not followed, even when resumed.
+- Codex rollout JSONL is internal and changes across CLI versions. Parsing is
+  intentionally fail-soft: an unfamiliar tool record leaves prose intact and
+  raises the panel's format-drift notice.
+- Code-mode extraction supports common literal calls, not general JavaScript
+  control flow. Ambiguous batches stay aggregated; `write_stdin` and `wait` can
+  appear as separate cards. Some wrappers omit a nested shell exit code, in
+  which case AIChatRender shows the output without guessing that it failed.
+- Event-backed file changes can appear only when their completion event arrives,
+  so a very fast Codex edit may never show a pending state.
 - On macOS, a stale PID-reuse check is weaker than on Linux: `ps` reports
   wall-clock start times that can't be compared to the marker Claude records, so
   AIChatRender verifies the process still exists rather than that it is the *same*
