@@ -10,6 +10,7 @@ dev/**
 # Repository furniture, not part of the published extension.
 .github/**
 scripts/**
+docs/**
 CITATION.cff
 CONTRIBUTING.md
 
