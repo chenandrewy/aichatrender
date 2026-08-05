@@ -280,7 +280,7 @@ test('LineBuffer: startMidLine drops through the first newline', () => {
 // ---------------------------------------------------------------- fixture
 
 test('fixture: synthetic session parses to the expected conversation', () => {
-  const raw = fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'session.jsonl'));
+  const raw = fs.readFileSync(path.join(__dirname, 'fixtures', 'session.jsonl'));
   const lb = new LineBuffer();
   const messages = [];
   let unexpected = false;

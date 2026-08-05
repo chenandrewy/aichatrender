@@ -13,7 +13,7 @@ const {
 } = require('../export');
 
 const fixture = (name) =>
-  fs.readFileSync(path.join(__dirname, '..', 'fixtures', name), 'utf8');
+  fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
 
 test('provider detection recognizes Claude and Codex fixtures', () => {
   assert.equal(detectProvider(fixture('session.jsonl').trimEnd().split('\n')), 'claude');

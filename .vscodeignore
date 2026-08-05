@@ -1,6 +1,5 @@
 # Tests and their sample transcripts are not needed at runtime.
 test/**
-fixtures/**
 
 # Editor and VCS noise.
 .vscode/**
