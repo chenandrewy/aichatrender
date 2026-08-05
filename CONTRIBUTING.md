@@ -10,10 +10,37 @@ version.
 node --test test/*.test.js
 ```
 
-Pure-parser and process-helper tests against synthetic fixtures. No real
-transcript content is committed. CI runs these on Linux and macOS, which
+Pure-parser and process-helper tests use synthetic fixtures. The larger real
+transcripts under `test/fixtures/chat-examples/` are for manual live testing;
+they are not loaded by the parser test suite. CI runs on Linux and macOS, which
 matters: `active-terminal.js` reads `/proc` on Linux and shells out to
 `pgrep`/`lsof`/`ps` on macOS, and only a macOS runner exercises the latter.
+
+## Live transcript testing
+
+Resume a disposable copy of a chat example with its short prefix:
+
+```sh
+npm run chat-example -- claude1
+npm run chat-example -- claude2
+npm run chat-example -- codex1
+npm run chat-example -- codex2
+```
+
+Resuming is the default, and the staged transcript is removed when the CLI
+exits. Use `fork` explicitly when testing fork behavior; that creates a new
+persistent chat. Omit the selector for an interactive picker:
+
+```sh
+npm run chat-example -- fork claude2
+npm run chat-example
+npm run chat-example -- --list
+```
+
+Every run gives its staged copy a fresh session ID and leaves the checked-in
+JSONL untouched. The staged seed is removed when the CLI exits; an explicitly
+forked chat remains in the normal CLI session store. Pass `--keep` to retain the
+seed, `--dry-run` to inspect the command, or put CLI arguments after `--`.
 
 ## Running it locally
 
