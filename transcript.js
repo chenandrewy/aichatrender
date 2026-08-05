@@ -19,6 +19,8 @@ const LIMITS = {
   TOOL_SUMMARY: 160, // UTF-16 units of a tool call's primary argument
   TOOL_RESULT_LINES: 8, // result lines shown before the "+N lines" marker
   TOOL_RESULT_CHARS: 2048, // chars kept of a result, however few lines that is
+  TOOL_DIFF_LINES: 40, // diff lines rendered before the "+N lines" marker
+  TOOL_DIFF_COLS: 400, // chars kept of a single diff line
 };
 
 // Claude Code's project-directory munge: every non-alphanumeric character of the
@@ -396,6 +398,56 @@ function patchCounts(structuredPatch) {
   return added || removed ? { added, removed } : undefined;
 }
 
+// Flattens a structuredPatch into rendered diff lines, numbered as the CLI
+// numbers them: a removed line carries its number in the old file, an added or
+// unchanged line its number in the new one. Hunks are separated by a gap marker
+// rather than a @@ header, matching what the terminal draws.
+//
+// Two passes, because the budget has to be spent on visible lines: build
+// everything, then cut. Real patches are small enough for that to be free —
+// median 12 lines over 1291 observed patches, p99 248.
+function diffLines(structuredPatch, budget = LIMITS.TOOL_DIFF_LINES) {
+  if (!Array.isArray(structuredPatch) || structuredPatch.length === 0) return undefined;
+  const all = [];
+  for (const hunk of structuredPatch) {
+    if (!hunk || !Array.isArray(hunk.lines) || hunk.lines.length === 0) continue;
+    let oldNo = Number.isFinite(hunk.oldStart) ? hunk.oldStart : 0;
+    let newNo = Number.isFinite(hunk.newStart) ? hunk.newStart : 0;
+    if (all.length) all.push({ gap: true });
+    for (const raw of hunk.lines) {
+      if (typeof raw !== 'string') continue;
+      const k = raw[0] === '+' || raw[0] === '-' ? raw[0] : ' ';
+      let s = raw.slice(1);
+      if (s.length > LIMITS.TOOL_DIFF_COLS) s = `${cutUnits(s, LIMITS.TOOL_DIFF_COLS)}…`;
+      if (k === '-') {
+        all.push({ k, n: oldNo, s });
+        oldNo += 1;
+      } else if (k === '+') {
+        all.push({ k, n: newNo, s });
+        newNo += 1;
+      } else {
+        all.push({ k, n: newNo, s }); // unchanged: numbered in the new file
+        oldNo += 1;
+        newNo += 1;
+      }
+    }
+  }
+  if (!all.some((l) => !l.gap)) return undefined;
+  let shown = 0;
+  for (let i = 0; i < all.length; i += 1) {
+    if (all[i].gap) continue;
+    shown += 1;
+    if (shown === budget) {
+      const rest = all.slice(i + 1);
+      const more = rest.filter((l) => !l.gap).length;
+      if (!more) break; // the budget landed exactly on the end
+      const lines = all.slice(0, i + 1);
+      return { lines, more };
+    }
+  }
+  return { lines: all, more: 0 };
+}
+
 // A new file has nothing to diff against, so its patch comes back empty and the
 // size has to come from the written content instead. `content` is Write's own
 // always-present field and is absent from Edit's record, so its presence is
@@ -427,7 +479,13 @@ function presentResult(name, res) {
     const parts = [];
     if (added) parts.push(`Added ${plural(added, 'line')}`);
     if (removed) parts.push(`${added ? 'removed' : 'Removed'} ${plural(removed, 'line')}`);
-    return { text: '', more: 0, isError: res.isError, summary: parts.join(', ') };
+    return {
+      text: '',
+      more: 0,
+      isError: res.isError,
+      summary: parts.join(', '),
+      diff: res.diff,
+    };
   }
   if (res.wrote) {
     // Otherwise a new file reports "File created successfully at: <path>",
@@ -584,8 +642,10 @@ function parseLine(line, opts) {
       // call if a record ever carries several.
       if (results.length === 1 && rec.toolUseResult && typeof rec.toolUseResult === 'object') {
         const patch = patchCounts(rec.toolUseResult.structuredPatch);
-        if (patch) results[0].patch = patch;
-        else {
+        if (patch) {
+          results[0].patch = patch;
+          results[0].diff = diffLines(rec.toolUseResult.structuredPatch);
+        } else {
           const wrote = writtenLines(rec.toolUseResult.content);
           if (wrote) results[0].wrote = wrote;
         }
@@ -623,6 +683,7 @@ module.exports = {
   toolResultText,
   clipResult,
   patchCounts,
+  diffLines,
   writtenLines,
   presentResult,
   markStalePending,

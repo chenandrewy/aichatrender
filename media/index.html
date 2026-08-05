@@ -70,6 +70,34 @@
     font-style: italic;
     opacity: 0.7;
   }
+  /* Diffs follow the editor's own diff colours, so they read as native in
+     whichever theme is active rather than carrying a terminal's palette. */
+  .tool-diff { margin: 0.15em 0 0 2ch; }
+  .diff-line {
+    position: relative;
+    padding-left: 6ch;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+  /* Generated content, so line numbers are not picked up by a copy. */
+  .diff-line::before {
+    content: attr(data-n);
+    position: absolute;
+    left: 0;
+    width: 5ch;
+    text-align: right;
+    opacity: 0.45;
+  }
+  .diff-line.add {
+    background: var(--vscode-diffEditor-insertedTextBackground, rgba(60, 160, 60, 0.18));
+  }
+  .diff-line.del {
+    background: var(--vscode-diffEditor-removedTextBackground, rgba(200, 60, 60, 0.18));
+  }
+  .diff-gap {
+    padding-left: 6ch;
+    opacity: 0.45;
+  }
   @keyframes aicr-flash {
     from { background: var(--vscode-editor-findMatchHighlightBackground, rgba(255, 200, 0, 0.45)); }
     to { background: transparent; }
@@ -210,10 +238,21 @@
     if (s.t === 'math') return s.m === 'inline' || s.m === 'display';
     return false;
   }
+  function validDiffLine(l) {
+    if (!l || typeof l !== 'object') return false;
+    if (l.gap === true) return true;
+    return typeof l.k === 'string' && typeof l.s === 'string' && typeof l.n === 'number';
+  }
+  function validDiff(d) {
+    if (d === undefined) return true;
+    return !!d && typeof d === 'object' && typeof d.more === 'number'
+      && Array.isArray(d.lines) && d.lines.every(validDiffLine);
+  }
   function validResult(r) {
     if (r === undefined) return true;
     if (!r || typeof r !== 'object') return false;
     if (r.summary !== undefined && typeof r.summary !== 'string') return false;
+    if (!validDiff(r.diff)) return false;
     return typeof r.text === 'string' && typeof r.more === 'number';
   }
   function validEntry(e) {
@@ -372,6 +411,13 @@
     // counts, a file read its size. The bytes are not what is being read here.
     if (e.result.summary) {
       addNote(art, e.result.summary);
+      if (e.result.diff) {
+        appendDiff(art, e.result.diff);
+        if (e.result.diff.more > 0) {
+          addNote(art, '+' + e.result.diff.more
+            + (e.result.diff.more === 1 ? ' more line' : ' more lines'));
+        }
+      }
       return;
     }
     if (e.result.text) {
@@ -385,6 +431,27 @@
     } else if (!e.result.text) {
       addNote(art, '(no output)');
     }
+  }
+
+  // One element per diff line. The +/- marker is real text so it survives a
+  // copy; the line number is CSS-generated so it does not.
+  function appendDiff(art, diff) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tool-diff';
+    for (var i = 0; i < diff.lines.length; i++) {
+      var line = diff.lines[i];
+      var el = document.createElement('div');
+      if (line.gap) {
+        el.className = 'diff-gap';
+        el.textContent = '⋯';
+      } else {
+        el.className = 'diff-line ' + (line.k === '+' ? 'add' : line.k === '-' ? 'del' : 'ctx');
+        el.setAttribute('data-n', String(line.n));
+        el.textContent = line.k + line.s;
+      }
+      wrap.appendChild(el);
+    }
+    art.appendChild(wrap);
   }
 
   function addNote(art, wording) {

@@ -42,9 +42,10 @@ a terminal is unreadable, and copying an equation out of one is worse.
 - **Shows Claude Code's tool calls** the way the terminal does: the tool and its
   primary argument on one line, the first lines of its result beneath it, and a
   count of what was left unread. Commands show their output; a file read
-  collapses to its size, and a file edit reports its added and removed line
-  counts, since neither the file nor the diff is what you are reading the panel
-  for. Failed calls are marked and keep their reason. A call still running says
+  collapses to its size; a file edit reports its added and removed line counts
+  and draws the diff beneath them, numbered by line and coloured with the
+  editor's own diff colours, so it matches whichever theme is active. Failed
+  calls are marked and keep their reason. A call still running says
   so, and says instead that no result was recorded once the chat has moved past
   it — so a shift in the transcript format reads as a shift, not as a hang.
   Codex CLI sessions show prose only: its rollouts describe a tool call as a

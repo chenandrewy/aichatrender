@@ -34,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   removed lines, rather than reprinting the file or the confirmation sentence
   the model was sent. Commands are unchanged, since there the transcript's
   documented result field already is the command's output.
+- **File edits now render their diff**, numbered by line — removals against the
+  old file, additions and context against the new — with hunks separated and
+  long diffs cut to a line budget with a "+N more lines" marker. Colours come
+  from the editor's own diff theme rather than fixed values, so a diff matches
+  the surrounding editor in any theme. Copying one yields a fenced `diff` block;
+  the line numbers are CSS generated content and so stay out of the clipboard.
+  Syntax highlighting inside the diff is deliberately not attempted: a patch
+  supplies hunks rather than whole files, so a highlighter would be lexing from
+  an arbitrary mid-file offset and would mis-tokenize at the edges.
 - The panel now says when a tool call's result never arrived. Previously an
   unanswered call read "running…" indefinitely, which looked identical to the
   panel having lost track of the transcript format.

@@ -15,6 +15,7 @@ const {
   toolSummary,
   clipResult,
   patchCounts,
+  diffLines,
   writtenLines,
   presentResult,
   markStalePending,
@@ -738,4 +739,106 @@ test('writtenLines: blank or non-string content reports nothing', () => {
   assert.equal(writtenLines('  \n\n'), undefined);
   assert.equal(writtenLines(undefined), undefined);
   assert.equal(writtenLines('one line'), 1);
+});
+
+// ------------------------------------------------------------------- diffs
+
+const PATCH = [
+  {
+    oldStart: 124, oldLines: 4, newStart: 124, newLines: 6,
+    lines: ['     labelpad=6)', ' ', '-def build(a, b):', '+def build(a, b, c):', '+    # added', '     rows = 1'],
+  },
+  { oldStart: 200, oldLines: 2, newStart: 202, newLines: 1, lines: ['-    old_call()', ' ok'] },
+];
+
+test('diffLines: numbers removals from the old file, the rest from the new', () => {
+  const d = diffLines(PATCH);
+  assert.equal(d.more, 0);
+  assert.deepEqual(
+    d.lines.map((l) => (l.gap ? '---' : `${l.n}${l.k}${l.s.trim()}`)),
+    [
+      '124 labelpad=6)',
+      '125 ',
+      '126-def build(a, b):',
+      '126+def build(a, b, c):',
+      '127+# added',
+      '128 rows = 1',
+      '---',
+      '200-old_call()',
+      '202 ok',
+    ],
+  );
+});
+
+test('diffLines: hunks are separated, and a gap never leads or trails', () => {
+  const d = diffLines(PATCH);
+  assert.equal(d.lines[0].gap, undefined);
+  assert.equal(d.lines[d.lines.length - 1].gap, undefined);
+  assert.equal(d.lines.filter((l) => l.gap).length, 1);
+});
+
+test('diffLines: the budget counts visible lines and reports the remainder', () => {
+  const d = diffLines(PATCH, 3);
+  assert.equal(d.lines.filter((l) => !l.gap).length, 3);
+  assert.equal(d.more, 5); // 8 diff lines total
+  assert.equal(d.lines[d.lines.length - 1].gap, undefined); // no dangling gap
+});
+
+test('diffLines: a budget landing exactly on the end reports nothing more', () => {
+  const d = diffLines(PATCH, 8);
+  assert.equal(d.more, 0);
+  assert.equal(d.lines.filter((l) => !l.gap).length, 8);
+});
+
+test('diffLines: an over-wide line is cut, and empty patches yield nothing', () => {
+  const wide = diffLines([{ oldStart: 1, newStart: 1, lines: [`+${'x'.repeat(5000)}`] }]);
+  assert.equal(wide.lines[0].s.length, LIMITS.TOOL_DIFF_COLS + 1); // + the ellipsis
+  assert.equal(wide.lines[0].s.endsWith('…'), true);
+  assert.equal(diffLines([]), undefined);
+  assert.equal(diffLines(undefined), undefined);
+  assert.equal(diffLines([{ oldStart: 1, newStart: 1, lines: [] }]), undefined);
+});
+
+test('diffLines: a hunk missing its start numbers still renders', () => {
+  const d = diffLines([{ lines: ['+one'] }]);
+  assert.equal(d.lines[0].n, 0); // fail soft: no number rather than no diff
+  assert.equal(d.lines[0].s, 'one');
+});
+
+test('an edit carries its diff alongside the counts', () => {
+  const call = parseLine(
+    asstLine([{ type: 'tool_use', id: 't1', name: 'Edit', input: { file_path: '/w/a.py' } }]),
+    OPTS,
+  );
+  const messages = [...call.messages];
+  applyToolResults(
+    messages,
+    parseLine(
+      userLine([{ type: 'tool_result', tool_use_id: 't1', content: 'updated' }], {
+        toolUseResult: { filePath: '/w/a.py', structuredPatch: PATCH },
+      }),
+      OPTS,
+    ).results,
+  );
+  assert.equal(messages[0].result.summary, 'Added 2 lines, removed 2 lines');
+  assert.equal(messages[0].result.diff.lines.length, 9); // 8 lines + 1 gap
+});
+
+test('a new file has no diff to carry', () => {
+  const call = parseLine(
+    asstLine([{ type: 'tool_use', id: 't1', name: 'Write', input: { file_path: '/w/n.js' } }]),
+    OPTS,
+  );
+  const messages = [...call.messages];
+  applyToolResults(
+    messages,
+    parseLine(
+      userLine([{ type: 'tool_result', tool_use_id: 't1', content: 'created' }], {
+        toolUseResult: { type: 'create', filePath: '/w/n.js', structuredPatch: [], content: 'a\nb' },
+      }),
+      OPTS,
+    ).results,
+  );
+  assert.equal(messages[0].result.summary, 'Wrote 2 lines');
+  assert.equal(messages[0].result.diff, undefined);
 });
