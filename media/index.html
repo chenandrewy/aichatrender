@@ -37,6 +37,39 @@
     padding: 0.6em 0.8em;
     opacity: 0.85;
   }
+  /* Tool calls are context for the prose around them, not the subject: compact,
+     monospace, and dimmed until hovered. */
+  article.tool {
+    margin: 0.3em 0;
+    padding: 0 0 0 0.8em;
+    border-left: 2px solid transparent;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 0.9em;
+    opacity: 0.7;
+  }
+  article.tool:hover { opacity: 1; }
+  article.tool.error { border-left-color: var(--vscode-editorError-foreground, #c33); }
+  .tool-call { margin: 0; overflow-wrap: break-word; }
+  .tool-call::before {
+    content: '⏺ ';
+    color: var(--vscode-charts-green, #3a3);
+  }
+  article.tool.error .tool-call::before { color: var(--vscode-editorError-foreground, #c33); }
+  .tool-name { font-weight: 600; }
+  .tool-arg { opacity: 0.85; }
+  .tool-result {
+    margin: 0.1em 0 0 2ch;
+    padding: 0;
+    background: transparent;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    opacity: 0.85;
+  }
+  .tool-note {
+    margin: 0 0 0 2ch;
+    font-style: italic;
+    opacity: 0.7;
+  }
   @keyframes aicr-flash {
     from { background: var(--vscode-editor-findMatchHighlightBackground, rgba(255, 200, 0, 0.45)); }
     to { background: transparent; }
@@ -177,10 +210,19 @@
     if (s.t === 'math') return s.m === 'inline' || s.m === 'display';
     return false;
   }
+  function validResult(r) {
+    return r === undefined
+      || (!!r && typeof r === 'object' && typeof r.text === 'string' && typeof r.more === 'number');
+  }
   function validEntry(e) {
-    return !!e && typeof e === 'object'
-      && (e.role === 'assistant' || e.role === 'user')
-      && typeof e.key === 'number'
+    if (!e || typeof e !== 'object' || typeof e.key !== 'number') return false;
+    if (e.role === 'tool') {
+      return !!e.tool && typeof e.tool === 'object'
+        && typeof e.tool.name === 'string' && e.tool.name !== ''
+        && typeof e.tool.summary === 'string'
+        && validResult(e.result);
+    }
+    return (e.role === 'assistant' || e.role === 'user')
       && typeof e.tsDisplay === 'string'
       && Array.isArray(e.spans) && e.spans.every(validSpan);
   }
@@ -296,6 +338,50 @@
     }
   }
 
+  // Tool calls, shaped after the CLI's own display: the call on one line, a
+  // clipped result under it, and a count of the lines not shown. Every part is
+  // assigned with textContent — tool output is arbitrary bytes and is never
+  // parsed as Markdown, math, or HTML.
+  function renderTool(art, e) {
+    if (e.result && e.result.isError) art.classList.add('error');
+    var call = document.createElement('div');
+    // md-paragraph is what the clipboard serialiser treats as a block, so the
+    // call line copies as its own line rather than running into the result.
+    call.className = 'tool-call md-paragraph';
+    var name = document.createElement('span');
+    name.className = 'tool-name';
+    name.textContent = e.tool.name;
+    call.appendChild(name);
+    if (e.tool.summary) {
+      var arg = document.createElement('span');
+      arg.className = 'tool-arg';
+      arg.textContent = '(' + e.tool.summary + ')';
+      call.appendChild(arg);
+    }
+    art.appendChild(call);
+    if (e.result === undefined) {
+      var pending = document.createElement('div');
+      pending.className = 'tool-note md-paragraph';
+      pending.textContent = 'running…';
+      art.appendChild(pending);
+      return;
+    }
+    if (e.result.text) {
+      var out = document.createElement('pre');
+      out.className = 'tool-result';
+      out.textContent = e.result.text;
+      art.appendChild(out);
+    }
+    if (e.result.more > 0 || !e.result.text) {
+      var note = document.createElement('div');
+      note.className = 'tool-note md-paragraph';
+      note.textContent = e.result.more > 0
+        ? '+' + e.result.more + (e.result.more === 1 ? ' line' : ' lines')
+        : '(no output)';
+      art.appendChild(note);
+    }
+  }
+
   // --- clipboard -----------------------------------------------------------
   // Own plain-text copies made inside the transcript so every rendered
   // structure goes back to its Markdown source. KaTeX's handler remains loaded
@@ -327,6 +413,11 @@
       var art = document.createElement('article');
       art.className = e.role;
       art.dataset.key = String(e.key);
+      if (e.role === 'tool') {
+        renderTool(art, e);
+        log.appendChild(art);
+        continue;
+      }
       if (e.role === 'user') {
         turnNumber++;
         art.id = 'user-turn-' + turnNumber;

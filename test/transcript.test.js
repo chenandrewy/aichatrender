@@ -12,11 +12,16 @@ const {
   segment,
   blockToSpans,
   turnPreview,
+  toolSummary,
+  clipResult,
+  applyToolResults,
+  trimToTurns,
   parseLine,
 } = require('../transcript');
 
 test('panel history limits retain long chats within a bounded rebuild tail', () => {
-  assert.equal(LIMITS.MAX_MESSAGES, 500);
+  assert.equal(LIMITS.MAX_TURNS, 100);
+  assert.equal(LIMITS.MAX_MESSAGES, 3000);
   assert.equal(LIMITS.MAX_REBUILD_BYTES, 10 * 1024 * 1024);
 });
 
@@ -81,7 +86,7 @@ test('pathWithin: empty or non-string operands are not a match', () => {
 
 // ---------------------------------------------------------------- filtering
 
-test('assistant: keeps text blocks, skips thinking and tool_use', () => {
+test('assistant: keeps text and tool_use blocks in order, skips thinking', () => {
   const r = parseLine(
     asstLine([
       { type: 'thinking', thinking: 'secret \\(a+b\\)' },
@@ -91,12 +96,17 @@ test('assistant: keeps text blocks, skips thinking and tool_use', () => {
     OPTS,
   );
   assert.equal(r.unexpected, false);
-  assert.equal(r.messages.length, 1);
+  assert.equal(r.messages.length, 2);
   assert.equal(r.messages[0].role, 'assistant');
   assert.deepEqual(r.messages[0].spans, [
     { t: 'text', s: 'Result: ' },
     { t: 'math', m: 'inline', s: 'E=mc^2' },
   ]);
+  assert.equal(r.messages[1].role, 'tool');
+  assert.deepEqual(r.messages[1].tool, { id: 't1', name: 'Bash', summary: 'ls' });
+  assert.equal(r.messages[1].result, undefined);
+  // Thinking stays out: it is not something the terminal shows by default.
+  assert.equal(r.messages.some((m) => /secret/.test(JSON.stringify(m))), false);
 });
 
 test('assistant: whitespace-only and non-string text blocks skipped', () => {
@@ -293,11 +303,12 @@ test('fixture: synthetic session parses to the expected conversation', () => {
     const r = parseLine(line, OPTS);
     if (r.unexpected) unexpected = true;
     messages.push(...r.messages);
+    applyToolResults(messages, r.results);
   }
   assert.equal(unexpected, false);
   assert.deepEqual(
     messages.map((m) => m.role),
-    ['user', 'assistant', 'assistant', 'assistant'],
+    ['user', 'assistant', 'tool', 'assistant', 'assistant'],
   );
   assert.deepEqual(messages[1].spans, [
     { t: 'text', s: 'By conservation, ' },
@@ -305,13 +316,177 @@ test('fixture: synthetic session parses to the expected conversation', () => {
     { t: 'text', s: '. Then:\n' },
     { t: 'math', m: 'display', s: 'E^2=(mc^2)^2+(pc)^2' },
   ]);
-  assert.equal(messages[2].spans.length, 1);
-  assert.equal(messages[2].spans[0].t, 'text');
-  assert.deepEqual(messages[3].spans, [
+  // The call renders where it was made, with the result that arrived two
+  // records later joined onto it.
+  assert.deepEqual(messages[2].tool, {
+    id: 'toolu_synthetic',
+    name: 'Bash',
+    summary: 'echo ok',
+  });
+  assert.deepEqual(messages[2].result, { text: 'ok', more: 0, isError: false });
+  assert.equal(messages[3].spans.length, 1);
+  assert.equal(messages[3].spans[0].t, 'text');
+  assert.deepEqual(messages[4].spans, [
     { t: 'text', s: 'Thus ' },
     { t: 'math', m: 'inline', s: 'p_1=p_2' },
     { t: 'text', s: ' costs $5 to check.' },
   ]);
+});
+
+// ---------------------------------------------------------------- tool calls
+
+test('toolSummary: named tools show their primary argument', () => {
+  assert.equal(toolSummary('Bash', { command: 'ls -l', description: 'list' }), 'ls -l');
+  assert.equal(toolSummary('Read', { file_path: '/workspace/a.js', offset: 10 }), '/workspace/a.js');
+  assert.equal(toolSummary('Grep', { pattern: 'foo', path: '/x' }), 'foo');
+  // description would read better, but the terminal shows the command; match it.
+  assert.equal(toolSummary('Bash', { description: 'list', command: 'ls' }), 'ls');
+});
+
+test('toolSummary: paths under the session cwd are shown relative to it', () => {
+  const cwd = '/workspace/proj';
+  assert.equal(toolSummary('Read', { file_path: '/workspace/proj/a/b.js' }, cwd), 'a/b.js');
+  // Outside the cwd, and a sibling directory sharing the prefix, stay absolute.
+  assert.equal(toolSummary('Read', { file_path: '/etc/hosts' }, cwd), '/etc/hosts');
+  assert.equal(
+    toolSummary('Read', { file_path: '/workspace/project2/a.js' }, cwd),
+    '/workspace/project2/a.js',
+  );
+  assert.equal(toolSummary('Read', { file_path: '/workspace/proj/a.js' }, ''), '/workspace/proj/a.js');
+});
+
+test('toolSummary: multi-line arguments collapse to one line', () => {
+  assert.equal(toolSummary('Bash', { command: 'a <<EOF\n  b\n\tc\nEOF' }), 'a <<EOF b c EOF');
+});
+
+test('toolSummary: unknown tool falls back to its first short string', () => {
+  // MCP and future tools are not knowable in advance.
+  assert.equal(toolSummary('mcp__x__query', { sql: 'select 1' }), 'select 1');
+  // A long string is a payload, not a label, so it is passed over.
+  assert.equal(toolSummary('Unknown', { body: 'x'.repeat(1000), tag: 'note' }), 'note');
+  assert.equal(toolSummary('TodoWrite', { todos: [] }), '');
+  assert.equal(toolSummary('Bash', undefined), '');
+  assert.equal(toolSummary('Bash', 'not-an-object'), '');
+});
+
+test('toolSummary: over-long argument is cut without splitting a surrogate pair', () => {
+  const summary = toolSummary('Bash', { command: `${'a'.repeat(159)}😀 tail` });
+  assert.equal(summary.endsWith('…'), true);
+  assert.equal(summary.includes('�'), false);
+  assert.equal([...summary].every((ch) => ch === 'a' || ch === '…'), true);
+});
+
+test('clipResult: keeps the first lines and counts the rest', () => {
+  const clipped = clipResult(Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n'));
+  assert.equal(clipped.text.split('\n').length, LIMITS.TOOL_RESULT_LINES);
+  assert.equal(clipped.text.startsWith('line 0'), true);
+  assert.equal(clipped.more, 12);
+});
+
+test('clipResult: short output is shown whole, blank output is empty', () => {
+  assert.deepEqual(clipResult('ok\n'), { text: 'ok', more: 0 });
+  assert.deepEqual(clipResult('   \n\n'), { text: '', more: 0 });
+  // Trailing blank lines must not spend the line budget or inflate the count.
+  assert.deepEqual(clipResult('a\nb\n\n\n'), { text: 'a\nb', more: 0 });
+});
+
+test('clipResult: the char cap counts only the lines it removed outright', () => {
+  const clipped = clipResult(`${'x'.repeat(5000)}\nsecond\nthird`);
+  assert.equal(clipped.text.length, LIMITS.TOOL_RESULT_CHARS);
+  assert.equal(clipped.more, 2); // the cut line is still shown, partially
+});
+
+test('tool_result records join onto the call by id, marking errors', () => {
+  const call = parseLine(
+    asstLine([{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'false' } }]),
+    OPTS,
+  );
+  const messages = [...call.messages];
+  const res = parseLine(
+    userLine([{ type: 'tool_result', tool_use_id: 't1', content: 'boom', is_error: true }]),
+    OPTS,
+  );
+  assert.equal(res.messages.length, 0); // a result is not a message of its own
+  applyToolResults(messages, res.results);
+  assert.deepEqual(messages[0].result, { text: 'boom', more: 0, isError: true });
+});
+
+test('tool results are collected even when user prompts are hidden', () => {
+  const res = parseLine(
+    userLine([{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }]),
+    { includeUser: false },
+  );
+  assert.equal(res.results.length, 1);
+});
+
+test('tool_result content blocks are joined, non-text parts named', () => {
+  const res = parseLine(
+    userLine([
+      {
+        type: 'tool_result',
+        tool_use_id: 't1',
+        content: [{ type: 'text', text: 'here:' }, { type: 'image', source: {} }],
+      },
+    ]),
+    OPTS,
+  );
+  assert.deepEqual(res.results[0], { id: 't1', text: 'here:\n[image]', more: 0, isError: false });
+});
+
+test('applyToolResults: unmatched or already-answered results are dropped', () => {
+  const messages = [
+    { role: 'tool', tool: { id: 't1' }, result: { text: 'first', more: 0, isError: false } },
+  ];
+  applyToolResults(messages, [{ id: 't1', text: 'second', more: 0, isError: false }]);
+  assert.equal(messages[0].result.text, 'first'); // a call is answered once
+  applyToolResults(messages, [{ id: 'gone', text: 'x', more: 0, isError: false }]);
+  assert.equal(messages.length, 1); // a trimmed-away call simply finds nothing
+  applyToolResults(messages, undefined);
+});
+
+test('tool_use with no usable name is skipped rather than shown blank', () => {
+  const r = parseLine(asstLine([{ type: 'tool_use', id: 't1', input: {} }]), OPTS);
+  assert.equal(r.messages.length, 0);
+});
+
+test('subagent tool calls stay out of the panel', () => {
+  const r = parseLine(
+    asstLine([{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'ls' } }], {
+      isSidechain: true,
+    }),
+    OPTS,
+  );
+  assert.equal(r.messages.length, 0);
+});
+
+// ---------------------------------------------------------------- retention
+
+function turnFixture(turns, perTurn) {
+  const messages = [];
+  for (let t = 0; t < turns; t += 1) {
+    messages.push({ role: 'user', n: t });
+    for (let i = 0; i < perTurn; i += 1) messages.push({ role: 'tool', n: t });
+  }
+  return messages;
+}
+
+test('trimToTurns: keeps the most recent turns, cutting at a turn boundary', () => {
+  const trimmed = trimToTurns(turnFixture(10, 3), 4);
+  assert.equal(trimmed.filter((m) => m.role === 'user').length, 4);
+  assert.equal(trimmed[0].role, 'user'); // opens on a prompt, never mid-exchange
+  assert.equal(trimmed[0].n, 6);
+});
+
+test('trimToTurns: a chat under the cap is untouched, preamble included', () => {
+  const messages = [{ role: 'assistant' }, ...turnFixture(3, 1)];
+  assert.equal(trimToTurns(messages, 100).length, messages.length);
+});
+
+test('trimToTurns: the message backstop bounds a single runaway turn', () => {
+  // One turn can hold thousands of calls, so turns alone cannot bound memory.
+  const trimmed = trimToTurns(turnFixture(1, 5000), 100, 500);
+  assert.equal(trimmed.length, 500);
+  assert.equal(trimmed.filter((m) => m.role === 'user').length, 0);
 });
 
 test('turnPreview: collapses whitespace and keeps math source', () => {

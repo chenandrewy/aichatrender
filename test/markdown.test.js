@@ -361,3 +361,21 @@ test('clipboard: a partial equation selection widens to the complete source', ()
   assert.deepEqual(calls, [['start', formula], ['end', formula]]);
   assert.equal(serializeMarkdown(contextual), '$x+y$');
 });
+
+test('copy: a tool call serialises to its call line and a fenced result', () => {
+  // The panel builds tool entries out of plain elements, so the clipboard
+  // serialiser needs no tool-specific cases — this pins that it stays true.
+  const rendered = element('article', { class: 'tool' }, [
+    element('div', { class: 'tool-call md-paragraph' }, [
+      element('span', { class: 'tool-name' }, [text('Bash')]),
+      element('span', { class: 'tool-arg' }, [text('(ls -l)')]),
+    ]),
+    element('pre', { class: 'tool-result' }, [text('a.js\nb.js')]),
+    element('div', { class: 'tool-note md-paragraph' }, [text('+3 lines')]),
+  ]);
+
+  assert.equal(
+    serializeMarkdown(rendered),
+    ['Bash(ls -l)', '', '```', 'a.js', 'b.js', '```', '', '+3 lines'].join('\n'),
+  );
+});

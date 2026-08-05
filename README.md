@@ -39,8 +39,14 @@ a terminal is unreadable, and copying an equation out of one is worse.
   bold/italic, inline and fenced code, and `| a | b |` tables (with column
   alignment and math inside cells). Raw HTML and Markdown links stay inert
   text — see below.
-- Shows assistant text and real user prompts, newest 500 messages. Thinking
-  blocks, tool calls and results, and harness bookkeeping are skipped.
+- **Shows Claude Code's tool calls** the way the terminal does: the tool and its
+  primary argument on one line, the first lines of its result beneath it, and a
+  count of what was left unread. Failed calls are marked, and a call still
+  running says so until its result arrives. Codex CLI sessions show prose only —
+  its rollouts describe a tool call as a JavaScript program inside a string, with
+  the readable labels in a separate event stream, so it needs its own parser.
+- Shows assistant text and real user prompts from the newest 100 user turns.
+  Thinking blocks, subagent traffic, and harness bookkeeping are skipped.
 
 ## Requirements
 
@@ -74,7 +80,9 @@ precise about the scope.
   state record under `~/.claude/sessions/` and the transcript it names, after
   validating that its real cwd is inside the workspace.
 - **No XSS surface.** The Markdown subset builds only fixed DOM elements and
-  assigns prose via `textContent`; raw HTML is never parsed. Only math source
+  assigns prose via `textContent`; raw HTML is never parsed. Tool arguments and
+  tool output are arbitrary bytes, so they are assigned the same way and are
+  never run through the Markdown or math renderers at all. Only math source
   reaches KaTeX (`trust: false`, `throwOnError: false`), under a strict CSP with
   nonce'd scripts, failing soft on malformed records.
 
