@@ -12,8 +12,8 @@ const LIMITS = {
   MAX_MATH_PER_MSG: 64, // math spans per message (extras rendered as plain text)
   MAX_LINE: 256 * 1024, // bytes; longer JSONL lines skipped before JSON.parse
   MAX_PARTIAL: 512 * 1024, // bytes; partial-line buffer cap (discard + resync)
-  MAX_MESSAGES: 50, // messages retained in the panel
-  MAX_REBUILD_BYTES: 4 * 1024 * 1024, // tail read on whole-file rebuild
+  MAX_MESSAGES: 500, // messages retained in the panel
+  MAX_REBUILD_BYTES: 10 * 1024 * 1024, // tail read on whole-file rebuild
   TURN_PREVIEW: 80, // UTF-16 units of a user prompt shown in the turn picker
 };
 

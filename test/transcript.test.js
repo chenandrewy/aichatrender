@@ -15,6 +15,11 @@ const {
   parseLine,
 } = require('../transcript');
 
+test('panel history limits retain long chats within a bounded rebuild tail', () => {
+  assert.equal(LIMITS.MAX_MESSAGES, 500);
+  assert.equal(LIMITS.MAX_REBUILD_BYTES, 10 * 1024 * 1024);
+});
+
 const OPTS = { includeUser: true };
 
 function asstLine(blocks, extra) {

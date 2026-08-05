@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- The panel now retains the newest 500 rendered messages instead of 50, and a
+  whole-file rebuild reads up to the final 10 MiB of a transcript instead of
+  4 MiB. Longer chats therefore keep substantially more scrollback, including
+  the complete `claude1` development example.
+
 ### Added
 
 - Copying rendered transcript content now writes the corresponding Markdown to
