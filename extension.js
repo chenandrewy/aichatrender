@@ -68,6 +68,7 @@ function show(context, preserveFocus = false, preserveColumn = false) {
     { viewColumn: vscode.ViewColumn.Beside, preserveFocus },
     {
       enableScripts: true,
+      enableFindWidget: true,
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')],
     },
   );

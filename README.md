@@ -28,6 +28,14 @@ a terminal is unreadable, and copying an equation out of one is worse.
   bounds rendered width, so wide characters count double). Picking one scrolls
   the panel to that turn and flashes it. The list covers the messages the panel
   currently holds, so it never offers a turn the panel cannot show.
+- **Finds text in the panel.** With the panel focused, `Cmd+F` (`Ctrl+F` on
+  Windows and Linux) opens VS Code's find widget over the rendered chat, with
+  the usual next/previous and match count. It searches what is currently in the
+  panel; use **Browse Turns and Pick** to jump by prompt. Equations are searched
+  as rendered, not as source: `x` in `$x^2$` matches, but a symbol matches only
+  its rendered character — `θ`, not `\theta`. KaTeX does keep the original
+  LaTeX in a MathML annotation, but it is clip-hidden and the find widget skips
+  it.
 - **Renders math** with a vendored, pinned KaTeX: `$$…$$` and `\[…\]` display,
   `\(…\)` and `$…$` inline. Single-`$` uses Pandoc-style guards so currency and
   `$VAR` don't trigger false positives.

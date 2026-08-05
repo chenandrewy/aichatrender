@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Find in the panel.** `Cmd+F` / `Ctrl+F` with the panel focused opens VS
+  Code's webview find widget, searching the rendered chat.
 - **Claude Code and Codex CLI tool calls now appear in the panel**, shaped after
   the CLIs' own display: the tool and its primary argument on one line, the
   first few lines of
