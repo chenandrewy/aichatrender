@@ -16,6 +16,7 @@ const {
   LineBuffer,
   turnPreview,
   applyToolResults,
+  markStalePending,
   trimToTurns,
   parseLine: parseClaudeLine,
 } = require('./transcript');
@@ -600,6 +601,7 @@ function readRange(fd, from, to) {
     applyToolResults(follower.messages, r.results);
   }
   follower.messages = trimToTurns(follower.messages);
+  markStalePending(follower.messages);
   return read;
 }
 
@@ -628,7 +630,7 @@ function sendHistory() {
     entries: f
       ? f.messages.map((m) =>
           m.role === 'tool'
-            ? { key: m.key, role: 'tool', tool: m.tool, result: m.result }
+            ? { key: m.key, role: 'tool', tool: m.tool, result: m.result, stale: m.stale === true }
             : {
                 key: m.key,
                 role: m.role,

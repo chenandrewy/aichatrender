@@ -267,6 +267,15 @@ function turnPreview(spans, maxUnits = LIMITS.TURN_PREVIEW) {
   return `${cutUnits(out, maxUnits).trimEnd()}…`;
 }
 
+// Content-block types we know about, so an unfamiliar one can drive the
+// "format may have changed" notice rather than disappearing quietly. These are
+// the Messages API's own block names, which is the documented, versioned side
+// of the transcript. `thinking` is known and deliberately skipped; the user-side
+// attachment blocks are known and skipped because the panel shows prompts as
+// text. Observed across 6,700 tool calls: nothing else appears today.
+const ASSISTANT_BLOCKS = new Set(['text', 'thinking', 'tool_use']);
+const USER_BLOCKS = new Set(['tool_result', 'text', 'image', 'document']);
+
 // ------------------------------------------------------------------ tool calls
 
 // The input field each tool is identified by in the CLI's own transcript, so a
@@ -310,7 +319,12 @@ function toolSummary(name, input, cwd) {
         break;
       }
     }
-  } else {
+  }
+  // Fall through to the generic scan when a mapped key finds nothing: a known
+  // tool whose input schema was renamed under us would otherwise render with a
+  // blank argument, which reads as a bug rather than as drift. An empty mapping
+  // (TodoWrite) means "no argument worth showing" and is left alone.
+  if (raw === '' && (!keys || keys.length > 0)) {
     for (const v of Object.values(input)) {
       // A long string is a payload (file contents, a patch), not a label.
       if (typeof v === 'string' && v.trim() !== '' && v.length <= LIMITS.TOOL_SUMMARY * 4) {
@@ -362,6 +376,85 @@ function clipResult(text) {
   return { text: out, more: more > 0 ? more : 0 };
 }
 
+// Counts the changed lines in a structuredPatch — the one field this module
+// takes from `toolUseResult`, the CLI's internal sidecar. Over 34 observed CLI
+// versions that record only ever gained keys, and `structuredPatch` was present
+// in every variant; even so, anything unrecognized returns undefined and the
+// caller falls back to the tool_result text, which is the documented channel.
+function patchCounts(structuredPatch) {
+  if (!Array.isArray(structuredPatch) || structuredPatch.length === 0) return undefined;
+  let added = 0;
+  let removed = 0;
+  for (const hunk of structuredPatch) {
+    if (!hunk || !Array.isArray(hunk.lines)) continue;
+    for (const line of hunk.lines) {
+      if (typeof line !== 'string') continue;
+      if (line.startsWith('+')) added += 1;
+      else if (line.startsWith('-')) removed += 1;
+    }
+  }
+  return added || removed ? { added, removed } : undefined;
+}
+
+// A new file has nothing to diff against, so its patch comes back empty and the
+// size has to come from the written content instead. `content` is Write's own
+// always-present field and is absent from Edit's record, so its presence is
+// also what distinguishes the two. Same sidecar, same fail-soft rule.
+function writtenLines(content) {
+  if (typeof content !== 'string') return undefined;
+  const trimmed = content.replace(/\s+$/, '');
+  return trimmed === '' ? undefined : trimmed.split('\n').length;
+}
+
+function plural(n, noun) {
+  return `${n} ${n === 1 ? noun : `${noun}s`}`;
+}
+
+// Tools whose output is a file the reader is not reading right now. The panel
+// reports that the call happened and how much came back; the terminal hides
+// these behind an expand key for the same reason. Derived from the tool_result
+// block itself, so the collapse costs no dependency on the sidecar.
+const COLLAPSED_TOOLS = new Set(['Read']);
+
+// Final shape of a result, once its call is known. A file edit becomes its line
+// counts, a file read becomes its size, and everything else keeps the clipped
+// output — which for Bash is already exactly what the terminal shows, since
+// there the documented channel *is* stdout.
+function presentResult(name, res) {
+  const base = { text: res.text, more: res.more, isError: res.isError };
+  if (res.patch) {
+    const { added, removed } = res.patch;
+    const parts = [];
+    if (added) parts.push(`Added ${plural(added, 'line')}`);
+    if (removed) parts.push(`${added ? 'removed' : 'Removed'} ${plural(removed, 'line')}`);
+    return { text: '', more: 0, isError: res.isError, summary: parts.join(', ') };
+  }
+  if (res.wrote) {
+    // Otherwise a new file reports "File created successfully at: <path>",
+    // which only repeats the path already on the call line.
+    return { text: '', more: 0, isError: res.isError, summary: `Wrote ${plural(res.wrote, 'line')}` };
+  }
+  // An error carries the reason in its text; never collapse that away.
+  if (!COLLAPSED_TOOLS.has(name) || res.isError) return base;
+  if (res.text === '[image]') return { text: '', more: 0, isError: false, summary: 'image' };
+  const lines = res.text ? res.text.split('\n').length + res.more : 0;
+  if (!lines) return base;
+  return { text: '', more: 0, isError: false, summary: plural(lines, 'line') };
+}
+
+// Marks calls that will never be answered. A call is pending until its result
+// arrives, but once the user has spoken again the exchange has moved on, so a
+// perpetual "running…" would be indistinguishable from the panel having lost
+// track of the format. `result` is left undefined so a late result still binds.
+function markStalePending(messages) {
+  let laterUserTurn = false;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    if (m.role === 'user') laterUserTurn = true;
+    else if (m.role === 'tool' && m.result === undefined && laterUserTurn) m.stale = true;
+  }
+}
+
 // Attaches results to the calls they belong to, by tool_use_id. A result whose
 // call has already been trimmed out of the retained window simply finds nothing.
 // Scans backwards: a call is answered within a turn or two of being made.
@@ -371,7 +464,7 @@ function applyToolResults(messages, results) {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const m = messages[i];
       if (m.role === 'tool' && m.tool.id === res.id && m.result === undefined) {
-        m.result = { text: res.text, more: res.more, isError: res.isError };
+        m.result = presentResult(m.tool.name, res);
         break;
       }
     }
@@ -434,8 +527,15 @@ function parseLine(line, opts) {
     const content = rec.message && rec.message.content;
     if (!Array.isArray(content)) return { messages: [], unexpected: true };
     const messages = [];
+    let changedShape = false;
     for (const b of content) {
       if (!b || typeof b !== 'object') continue;
+      // A tool call arriving under a name we don't know would otherwise vanish
+      // from the panel in silence; say so instead.
+      if (!ASSISTANT_BLOCKS.has(b.type)) {
+        changedShape = true;
+        continue;
+      }
       if (b.type === 'tool_use') {
         if (typeof b.name !== 'string' || b.name === '') continue;
         messages.push({
@@ -454,7 +554,7 @@ function parseLine(line, opts) {
       if (typeof b.text !== 'string' || b.text.trim() === '') continue;
       messages.push(makeMessage(rec, 'assistant', b.text));
     }
-    return { messages, unexpected: false };
+    return { messages, unexpected: changedShape };
   }
   if (rec.type === 'user') {
     const content = rec.message && rec.message.content;
@@ -462,8 +562,14 @@ function parseLine(line, opts) {
     // collected whether or not user prompts are being shown.
     if (Array.isArray(content)) {
       const results = [];
+      let changedShape = false;
       for (const b of content) {
-        if (!b || typeof b !== 'object' || b.type !== 'tool_result') continue;
+        if (!b || typeof b !== 'object') continue;
+        if (!USER_BLOCKS.has(b.type)) {
+          changedShape = true; // a result under an unknown name would go silent
+          continue;
+        }
+        if (b.type !== 'tool_result') continue; // pasted attachments, interrupts
         if (typeof b.tool_use_id !== 'string' || b.tool_use_id === '') continue;
         const clipped = clipResult(toolResultText(b.content));
         results.push({
@@ -473,7 +579,18 @@ function parseLine(line, opts) {
           isError: b.is_error === true,
         });
       }
-      return { messages: [], results, unexpected: false };
+      // The sidecar describes the record's single tool result. Only take it when
+      // there is exactly one, so a patch can never be attributed to the wrong
+      // call if a record ever carries several.
+      if (results.length === 1 && rec.toolUseResult && typeof rec.toolUseResult === 'object') {
+        const patch = patchCounts(rec.toolUseResult.structuredPatch);
+        if (patch) results[0].patch = patch;
+        else {
+          const wrote = writtenLines(rec.toolUseResult.content);
+          if (wrote) results[0].wrote = wrote;
+        }
+      }
+      return { messages: [], results, unexpected: changedShape };
     }
     if (!opts || !opts.includeUser) return none;
     if (rec.isMeta === true) return none;
@@ -505,6 +622,10 @@ module.exports = {
   toolSummary,
   toolResultText,
   clipResult,
+  patchCounts,
+  writtenLines,
+  presentResult,
+  markStalePending,
   applyToolResults,
   trimToTurns,
   parseLine,

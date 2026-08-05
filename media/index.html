@@ -211,8 +211,10 @@
     return false;
   }
   function validResult(r) {
-    return r === undefined
-      || (!!r && typeof r === 'object' && typeof r.text === 'string' && typeof r.more === 'number');
+    if (r === undefined) return true;
+    if (!r || typeof r !== 'object') return false;
+    if (r.summary !== undefined && typeof r.summary !== 'string') return false;
+    return typeof r.text === 'string' && typeof r.more === 'number';
   }
   function validEntry(e) {
     if (!e || typeof e !== 'object' || typeof e.key !== 'number') return false;
@@ -359,11 +361,17 @@
       call.appendChild(arg);
     }
     art.appendChild(call);
+    // A call is pending until its result arrives. Once the user has spoken
+    // again the exchange has moved on, so say the result never came rather than
+    // implying the call is still going.
     if (e.result === undefined) {
-      var pending = document.createElement('div');
-      pending.className = 'tool-note md-paragraph';
-      pending.textContent = 'running…';
-      art.appendChild(pending);
+      addNote(art, e.stale ? 'no result recorded' : 'running…');
+      return;
+    }
+    // A summary replaces the output outright: a file edit reports its line
+    // counts, a file read its size. The bytes are not what is being read here.
+    if (e.result.summary) {
+      addNote(art, e.result.summary);
       return;
     }
     if (e.result.text) {
@@ -372,14 +380,18 @@
       out.textContent = e.result.text;
       art.appendChild(out);
     }
-    if (e.result.more > 0 || !e.result.text) {
-      var note = document.createElement('div');
-      note.className = 'tool-note md-paragraph';
-      note.textContent = e.result.more > 0
-        ? '+' + e.result.more + (e.result.more === 1 ? ' line' : ' lines')
-        : '(no output)';
-      art.appendChild(note);
+    if (e.result.more > 0) {
+      addNote(art, '+' + e.result.more + (e.result.more === 1 ? ' line' : ' lines'));
+    } else if (!e.result.text) {
+      addNote(art, '(no output)');
     }
+  }
+
+  function addNote(art, wording) {
+    var note = document.createElement('div');
+    note.className = 'tool-note md-paragraph';
+    note.textContent = wording;
+    art.appendChild(note);
   }
 
   // --- clipboard -----------------------------------------------------------

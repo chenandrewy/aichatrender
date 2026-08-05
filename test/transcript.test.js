@@ -14,6 +14,10 @@ const {
   turnPreview,
   toolSummary,
   clipResult,
+  patchCounts,
+  writtenLines,
+  presentResult,
+  markStalePending,
   applyToolResults,
   trimToTurns,
   parseLine,
@@ -459,6 +463,164 @@ test('subagent tool calls stay out of the panel', () => {
   assert.equal(r.messages.length, 0);
 });
 
+// ------------------------------------------------- resilience to format drift
+
+test('toolSummary: a known tool whose input key was renamed still reads', () => {
+  // The whole point of the fallback: drift must not render a blank argument.
+  assert.equal(toolSummary('Bash', { cmd: 'ls -l', description: 'list files' }), 'ls -l');
+  assert.equal(toolSummary('Read', { path: '/w/a.js' }), '/w/a.js');
+  // An empty mapping means "no argument worth showing" and must not fall through.
+  assert.equal(toolSummary('TodoWrite', { todos: 'x' }), '');
+});
+
+test('an unknown assistant block type is reported, not silently dropped', () => {
+  const r = parseLine(
+    asstLine([
+      { type: 'text', text: 'hi' },
+      { type: 'server_tool_use', id: 't1', name: 'WebSearch', input: { query: 'x' } },
+    ]),
+    OPTS,
+  );
+  assert.equal(r.messages.length, 1); // the text still renders
+  assert.equal(r.unexpected, true); // and the panel says the format moved
+});
+
+test('known-but-skipped blocks stay quiet', () => {
+  assert.equal(parseLine(asstLine([{ type: 'thinking', thinking: 'x' }]), OPTS).unexpected, false);
+  // Pasted attachments and interrupt markers ride in as user array content.
+  const r = parseLine(userLine([{ type: 'image', source: {} }, { type: 'text', text: 'x' }]), OPTS);
+  assert.equal(r.unexpected, false);
+});
+
+test('an unknown result block type is reported', () => {
+  const r = parseLine(userLine([{ type: 'web_search_tool_result', tool_use_id: 't1' }]), OPTS);
+  assert.equal(r.results.length, 0);
+  assert.equal(r.unexpected, true);
+});
+
+test('markStalePending: a call outlived by a later prompt stops saying "running"', () => {
+  const messages = [
+    { role: 'user' },
+    { role: 'tool', tool: { id: 'a' }, result: undefined },
+    { role: 'user' },
+    { role: 'tool', tool: { id: 'b' }, result: undefined },
+  ];
+  markStalePending(messages);
+  assert.equal(messages[1].stale, true);
+  assert.equal(messages[3].stale, undefined); // still the live turn
+  // result stays undefined, so a late result can still bind to it
+  applyToolResults(messages, [{ id: 'a', text: 'late', more: 0, isError: false }]);
+  assert.equal(messages[1].result.text, 'late');
+});
+
+// ------------------------------------------------------ per-tool presentation
+
+test('patchCounts: counts added and removed lines across hunks', () => {
+  assert.deepEqual(
+    patchCounts([
+      { lines: [' ctx', '-old', '+new', '+extra'] },
+      { lines: ['-gone', ' ctx'] },
+    ]),
+    { added: 2, removed: 2 },
+  );
+  assert.equal(patchCounts([]), undefined);
+  assert.equal(patchCounts(undefined), undefined);
+  assert.equal(patchCounts([{ lines: [' ctx'] }]), undefined); // no change to report
+  assert.equal(patchCounts([{ nope: 1 }]), undefined); // shape drift: fail soft
+});
+
+test('an edit reports its line counts instead of the confirmation sentence', () => {
+  const call = parseLine(
+    asstLine([{ type: 'tool_use', id: 't1', name: 'Edit', input: { file_path: '/w/a.js' } }]),
+    OPTS,
+  );
+  const messages = [...call.messages];
+  const res = parseLine(
+    userLine([{ type: 'tool_result', tool_use_id: 't1', content: 'The file … has been updated.' }], {
+      toolUseResult: { filePath: '/w/a.js', structuredPatch: [{ lines: ['-a', '+b', '+c'] }] },
+    }),
+    OPTS,
+  );
+  applyToolResults(messages, res.results);
+  assert.equal(messages[0].result.summary, 'Added 2 lines, removed 1 line');
+  assert.equal(messages[0].result.text, '');
+});
+
+test('an edit with no usable patch falls back to the documented channel', () => {
+  const call = parseLine(
+    asstLine([{ type: 'tool_use', id: 't1', name: 'Edit', input: { file_path: '/w/a.js' } }]),
+    OPTS,
+  );
+  const messages = [...call.messages];
+  // structuredPatch renamed or gone: the confirmation text is still shown.
+  const res = parseLine(
+    userLine([{ type: 'tool_result', tool_use_id: 't1', content: 'File updated.' }], {
+      toolUseResult: { filePath: '/w/a.js', patch: [{ lines: ['+b'] }] },
+    }),
+    OPTS,
+  );
+  applyToolResults(messages, res.results);
+  assert.equal(messages[0].result.summary, undefined);
+  assert.equal(messages[0].result.text, 'File updated.');
+});
+
+test('a patch is not attributed to the wrong call when a record holds several', () => {
+  const res = parseLine(
+    userLine(
+      [
+        { type: 'tool_result', tool_use_id: 't1', content: 'a' },
+        { type: 'tool_result', tool_use_id: 't2', content: 'b' },
+      ],
+      { toolUseResult: { structuredPatch: [{ lines: ['+x'] }] } },
+    ),
+    OPTS,
+  );
+  assert.equal(res.results.length, 2);
+  assert.equal(res.results.every((r) => r.patch === undefined), true);
+});
+
+test('a read collapses to its size rather than dumping the file', () => {
+  const call = parseLine(
+    asstLine([{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: '/w/a.js' } }]),
+    OPTS,
+  );
+  const messages = [...call.messages];
+  const body = Array.from({ length: 40 }, (_, i) => `${i + 1}\tline`).join('\n');
+  applyToolResults(
+    messages,
+    parseLine(userLine([{ type: 'tool_result', tool_use_id: 't1', content: body }]), OPTS).results,
+  );
+  // 40 lines, though only the first 8 survived clipping: the count is the file's.
+  assert.equal(messages[0].result.summary, '40 lines');
+  assert.equal(messages[0].result.text, '');
+});
+
+test('a failed read still shows why it failed', () => {
+  const call = parseLine(
+    asstLine([{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: '/w/a.js' } }]),
+    OPTS,
+  );
+  const messages = [...call.messages];
+  applyToolResults(
+    messages,
+    parseLine(
+      userLine([
+        { type: 'tool_result', tool_use_id: 't1', content: 'ENOENT: no such file', is_error: true },
+      ]),
+      OPTS,
+    ).results,
+  );
+  assert.equal(messages[0].result.summary, undefined);
+  assert.equal(messages[0].result.text, 'ENOENT: no such file');
+});
+
+test('bash output is left alone — there the documented channel is stdout', () => {
+  assert.deepEqual(
+    presentResult('Bash', { text: 'a\nb', more: 3, isError: false }),
+    { text: 'a\nb', more: 3, isError: false },
+  );
+});
+
 // ---------------------------------------------------------------- retention
 
 function turnFixture(turns, perTurn) {
@@ -550,4 +712,30 @@ test('turnPreview: content past a trailing separator still marks truncation', ()
     turnPreview([{ t: 'text', s: `${'a'.repeat(80)} ` }, { t: 'text', s: '  \n ' }]),
     'a'.repeat(80),
   );
+});
+
+test('a new file reports what was written, not the path it already shows', () => {
+  const call = parseLine(
+    asstLine([{ type: 'tool_use', id: 't1', name: 'Write', input: { file_path: '/w/new.js' } }]),
+    OPTS,
+  );
+  const messages = [...call.messages];
+  applyToolResults(
+    messages,
+    parseLine(
+      userLine([{ type: 'tool_result', tool_use_id: 't1', content: 'File created successfully at: /w/new.js' }], {
+        // A new file has nothing to diff against, so its patch comes back empty.
+        toolUseResult: { type: 'create', filePath: '/w/new.js', structuredPatch: [], content: 'a\nb\nc\n' },
+      }),
+      OPTS,
+    ).results,
+  );
+  assert.equal(messages[0].result.summary, 'Wrote 3 lines');
+});
+
+test('writtenLines: blank or non-string content reports nothing', () => {
+  assert.equal(writtenLines(''), undefined);
+  assert.equal(writtenLines('  \n\n'), undefined);
+  assert.equal(writtenLines(undefined), undefined);
+  assert.equal(writtenLines('one line'), 1);
 });

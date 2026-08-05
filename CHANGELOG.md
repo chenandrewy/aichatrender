@@ -26,10 +26,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Claude Code tool calls now appear in the panel**, shaped after the CLI's own
   display: the tool and its primary argument on one line, the first few lines of
   its result under it, and a count of the lines not shown. Failed calls are
-  marked. Paths inside the session's working directory are shown relative to it.
-  Results are clipped as they are read, so a chat full of large outputs does not
-  grow the panel's memory in proportion. Subagent calls and thinking blocks stay
-  out, as before.
+  marked and keep their reason. Paths inside the session's working directory are
+  shown relative to it. Results are clipped as they are read, so a chat full of
+  large outputs does not grow the panel's memory in proportion. Subagent calls
+  and thinking blocks stay out, as before.
+- A file read collapses to its line count and a file edit reports its added and
+  removed lines, rather than reprinting the file or the confirmation sentence
+  the model was sent. Commands are unchanged, since there the transcript's
+  documented result field already is the command's output.
+- The panel now says when a tool call's result never arrived. Previously an
+  unanswered call read "running…" indefinitely, which looked identical to the
+  panel having lost track of the transcript format.
+- An unrecognized content block now raises the existing "transcript format may
+  have changed" notice instead of vanishing from the panel silently.
 - Codex CLI sessions are unaffected: its rollouts record a tool call as a
   JavaScript program inside a string, with the human-readable labels in a
   separate event stream keyed by a different id space, so the same treatment

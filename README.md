@@ -41,10 +41,15 @@ a terminal is unreadable, and copying an equation out of one is worse.
   text — see below.
 - **Shows Claude Code's tool calls** the way the terminal does: the tool and its
   primary argument on one line, the first lines of its result beneath it, and a
-  count of what was left unread. Failed calls are marked, and a call still
-  running says so until its result arrives. Codex CLI sessions show prose only —
-  its rollouts describe a tool call as a JavaScript program inside a string, with
-  the readable labels in a separate event stream, so it needs its own parser.
+  count of what was left unread. Commands show their output; a file read
+  collapses to its size, and a file edit reports its added and removed line
+  counts, since neither the file nor the diff is what you are reading the panel
+  for. Failed calls are marked and keep their reason. A call still running says
+  so, and says instead that no result was recorded once the chat has moved past
+  it — so a shift in the transcript format reads as a shift, not as a hang.
+  Codex CLI sessions show prose only: its rollouts describe a tool call as a
+  JavaScript program inside a string, with the readable labels in a separate
+  event stream, so it needs its own parser.
 - Shows assistant text and real user prompts from the newest 100 user turns.
   Thinking blocks, subagent traffic, and harness bookkeeping are skipped.
 
