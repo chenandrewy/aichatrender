@@ -57,6 +57,14 @@
         "command": "aichatrender.searchSource",
         "title": "AIChatRender: Search Chat Source"
       }
+    ],
+    "keybindings": [
+      {
+        "command": "aichatrender.searchSource",
+        "key": "ctrl+shift+f",
+        "mac": "cmd+shift+f",
+        "when": "activeWebviewPanelId == 'aichatrender'"
+      }
     ]
   },
   "dependencies": {

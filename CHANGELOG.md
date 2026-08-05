@@ -34,7 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   widget cannot match, since the displayed text is the glyph. Hits are listed
   with their turn number and role, windowed around the match, and picking one
   scrolls the panel to it. Tool entries are skipped: their text is displayed as
-  prose, so the find widget already reaches it.
+  prose, so the find widget already reaches it. Bound to `Cmd+Shift+F` /
+  `Ctrl+Shift+F` while the panel holds focus, and only then — the binding is
+  scoped by `activeWebviewPanelId` so that Find in Files keeps the key
+  everywhere else.
 - **Claude Code and Codex CLI tool calls now appear in the panel**, shaped after
   the CLIs' own display: the tool and its primary argument on one line, the
   first few lines of

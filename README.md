@@ -36,6 +36,9 @@ a terminal is unreadable, and copying an equation out of one is worse.
   and flashes it, as the turn picker does. Matching is case-insensitive
   substring, not regular expression. Tool calls are not searched — their output
   reaches the panel as ordinary text, where the find widget already covers it.
+  Bound to `Cmd+Shift+F` (`Ctrl+Shift+F`) **while the panel is focused only**,
+  so it never displaces Find in Files anywhere else. To reach it from the editor
+  or terminal, use the palette, or bind it yourself without the `when` clause.
 - **Finds text in the panel.** With the panel focused, `Cmd+F` (`Ctrl+F` on
   Windows and Linux) opens VS Code's find widget over the rendered chat, with
   the usual next/previous and match count. It searches what is currently in the
