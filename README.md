@@ -7,6 +7,8 @@ updating live as the session runs.
 The terminal already shows you the chat. The reason this exists is that LaTeX in
 a terminal is unreadable, and copying an equation out of one is worse.
 
+![Claude Code on the left showing raw LaTeX source; the AIChatRender panel on the right showing the same answer typeset.](https://raw.githubusercontent.com/chenandrewy/aichatrender/main/docs/images/panel.png)
+
 > **Unaffiliated.** AIChatRender is an independent tool. It is not made,
 > endorsed, or supported by Anthropic or OpenAI. It reads the session files
 > those CLIs already write to your own disk; it uses no API and no account.
@@ -171,6 +173,9 @@ which is exactly what this panel is trying not to be.
 | `AIChatRender: Show Panel` | Open the panel, following the newest transcript. |
 | `AIChatRender: Follow Active Terminal Chat` | Pin to the active terminal's chat. |
 | `AIChatRender: Browse Turns and Pick` | List the chat's user prompts and scroll to one. |
+| `AIChatRender: Search Chat Source` | Search the Markdown and LaTeX behind the rendering. `Cmd+Shift+F` / `Ctrl+Shift+F` with the panel focused. |
+
+![Browse Turns and Pick listing the chat's user prompts, oldest first, with the panel behind it showing a rendered Markdown table.](https://raw.githubusercontent.com/chenandrewy/aichatrender/main/docs/images/browse-turns.png)
 
 ## Known limitations
 

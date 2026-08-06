@@ -5,6 +5,14 @@
   "version": "0.5.0",
   "publisher": "chenandrewy",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chenandrewy/aichatrender.git"
+  },
+  "bugs": {
+    "url": "https://github.com/chenandrewy/aichatrender/issues"
+  },
+  "homepage": "https://github.com/chenandrewy/aichatrender#readme",
   "icon": "media/icon.png",
   "categories": [
     "Visualization",
@@ -32,12 +40,6 @@
   },
   "extensionKind": [
     "workspace"
-  ],
-  "activationEvents": [
-    "onCommand:aichatrender.show",
-    "onCommand:aichatrender.followActiveChat",
-    "onCommand:aichatrender.browseTurns",
-    "onCommand:aichatrender.searchSource"
   ],
   "contributes": {
     "commands": [

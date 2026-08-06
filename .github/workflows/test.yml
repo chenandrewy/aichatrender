@@ -30,4 +30,4 @@ jobs:
         with:
           node-version: '22'
       # Catches manifest and .vscodeignore breakage before a publish does.
-      - run: npx --yes @vscode/vsce package --allow-missing-repository
+      - run: npx --yes @vscode/vsce package
