@@ -5,7 +5,9 @@ All notable changes to AIChatRender are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.6.0] — 2026-08-06
+
+First release published to the VS Code Marketplace.
 
 ### Changed
 
@@ -24,6 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   complete `claude1` development example.
 - **Browse Turns and Pick** now lists prompts oldest-to-newest, matching both
   the transcript and the upper-right numbered turn index.
+- The README is now a listing page rather than a manual: pitch, screenshots,
+  requirements, commands, and condensed security. The reference material it
+  carried moves to `docs/reference.md`.
+- `package.json` declares `repository`, `bugs`, and `homepage`, and no longer
+  lists `onCommand:` activation events — VS Code derives those from the
+  contributed commands.
+
+### Known issues
+
+- Copying an equation returns the correct LaTeX wrapped in KaTeX's other two
+  rendering layers, so a pasted `$$…$$` block needs trimming by hand. Prose,
+  lists, code, and tables are unaffected.
 
 ### Added
 
