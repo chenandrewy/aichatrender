@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Run: scripts/chat-example [fork|resume] [claude1|codex1|...] [options]
+# Input: a chat fixture selector and optional fixture-runner arguments.
+# Output: a staged disposable Claude Code or Codex CLI session.
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+exec node "$script_dir/chat-example.js" "$@"

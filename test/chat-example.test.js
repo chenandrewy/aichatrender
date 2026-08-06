@@ -16,7 +16,7 @@ const {
   selectFixture,
   sessionMetadata,
   stageFixture,
-} = require('../scripts/chat-example');
+} = require('../scripts/chat-example.js');
 
 test('chat examples expose stable provider-number selectors', () => {
   const items = fixtures();
