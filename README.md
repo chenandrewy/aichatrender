@@ -98,6 +98,30 @@ a terminal is unreadable, and copying an equation out of one is worse.
   reports that it is unsupported rather than silently failing.
 - VS Code 1.85 or newer.
 
+## Security Features
+
+### No local server or agent hooks
+
+AIChatRender deliberately has no HTTP listener. A loopback server is still
+reachable by other processes on the same machine and, when cross-origin access
+is allowed, may also be reachable from browser pages. Without authentication, a
+predictable local endpoint can expose saved chats, accept injected content or
+control commands, or be impersonated so an agent hook sends responses to the
+wrong process.
+
+Instead, AIChatRender reads the transcript files Claude Code and Codex already
+write, validates sessions against the open workspace, and passes parsed content
+only through VS Code's internal extension-to-webview channel. It installs no
+agent hooks, does not modify either agent's configuration, keeps no additional
+history, and makes no network requests. The renderer uses vendored assets under
+a no-network Content Security Policy; raw HTML and links remain inert, tool
+output is inserted as plain text, and transcript wrapper programs are parsed but
+never executed.
+
+These choices reduce the extension's attack surface. They do not sandbox the
+underlying agent, make unrestricted execution safe, or turn the rendered panel
+into a complete or tamper-proof audit log.
+
 ## What it reads, and what that means
 
 This is an extension that reads your AI chat transcripts, so it's worth being
@@ -130,6 +154,11 @@ precise about the scope.
   properties, mutation, and unfamiliar block types raise the format-drift
   notice. Image blocks become the text marker `[image]`; data URLs never enter
   panel history or the webview.
+- **Transcripts are themselves sensitive files.** A session can contain your
+  prompts, command output, diffs, file paths, and any secret that ever appeared
+  in them. AIChatRender keeps no extra copy, but it does put that content on
+  screen, and anything you copy from the panel lands on the system clipboard —
+  worth remembering when sharing a screen or recording.
 
 The inert-Markdown choice is deliberate. Rendering links or HTML out of a
 transcript would turn model output into a clickable surface inside your editor,

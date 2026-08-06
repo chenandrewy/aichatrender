@@ -94,7 +94,34 @@ function procFsSource(opts) {
 // macOS: pgrep + lsof + ps
 // ---------------------------------------------------------------------------
 
-function runCommand(file, args) {
+// The utilities are invoked by fixed absolute paths, never resolved through
+// PATH, so nothing installed ahead of the system directories can be run in
+// their place. If a binary is not where macOS ships it, fail closed.
+const BSD_UTILITIES = {
+  pgrep: ['/usr/bin/pgrep'],
+  lsof: ['/usr/sbin/lsof', '/usr/bin/lsof'],
+  ps: ['/bin/ps', '/usr/bin/ps'],
+};
+const utilityPaths = new Map();
+
+function utilityPath(name) {
+  if (!utilityPaths.has(name)) {
+    const found = (BSD_UTILITIES[name] || []).find((candidate) => {
+      try {
+        fs.accessSync(candidate, fs.constants.X_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    utilityPaths.set(name, found);
+  }
+  return utilityPaths.get(name);
+}
+
+function runCommand(name, args) {
+  const file = utilityPath(name);
+  if (!file) return '';
   try {
     return execFileSync(file, args, {
       encoding: 'utf8',

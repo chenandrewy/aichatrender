@@ -732,5 +732,4 @@ module.exports = {
   cachedSessionMeta,
   createCodexParser,
   parseLine,
-  relativeSessionPath,
 };
