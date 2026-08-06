@@ -20,6 +20,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      # codex-tools.js requires acorn at load time, so the tests need the
+      # runtime dependencies installed, not just a checkout.
+      - run: npm ci
       - run: node --test test/*.test.js
 
   package:
@@ -29,5 +32,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      # vsce resolves the production dependency tree, which must exist on disk.
+      - run: npm ci
       # Catches manifest and .vscodeignore breakage before a publish does.
       - run: npx --yes @vscode/vsce package
