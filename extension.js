@@ -36,6 +36,7 @@ const DISCOVERY_MS = 1000;
 const WATCH_MS = 750;
 const CODEX_DAYS = 7;
 const FIRST_LINE_CHUNK = 64 * 1024;
+const READ_CHUNK = 64 * 1024;
 const MAX_CWD_CACHE = 512;
 const NO_SESSION = 'No Claude Code or Codex CLI session found for this workspace.';
 
@@ -397,6 +398,7 @@ function startFollower() {
     // picker is open cannot make a selection land on a different message.
     nextKey: 1,
     unexpected: false,
+    skippedBytes: false,
     status: NO_SESSION,
     timer: setInterval(discover, DISCOVERY_MS),
   };
@@ -625,6 +627,7 @@ function selectFile(candidate) {
   follower.lineBuf.reset();
   follower.messages = [];
   follower.unexpected = false;
+  follower.skippedBytes = false;
   if (!p) {
     follower.status = NO_SESSION;
     sendHistory();
@@ -649,6 +652,10 @@ function poll() {
     const st = fs.fstatSync(fd);
     if (st.ino !== follower.lastIno || st.size < follower.lastSize) {
       rebuild(fd, st);
+    } else if (st.size - follower.lastSize > LIMITS.MAX_REBUILD_BYTES) {
+      // Backlog too large to parse in one poll: jump to the tail rather than
+      // attempt it, and say so — silently thinning the view is worse.
+      rebuild(fd, st, true);
     } else if (st.size > follower.lastSize) {
       const consumed = readRange(fd, follower.lastSize, st.size);
       follower.lastSize += consumed;
@@ -663,11 +670,12 @@ function poll() {
   }
 }
 
-function rebuild(fd, st) {
+function rebuild(fd, st, skippedBytes = false) {
   follower.messages = [];
   follower.lineBuf.reset();
   follower.codexParser.reset();
   follower.unexpected = false;
+  follower.skippedBytes = skippedBytes;
   let offset = 0;
   if (st.size > LIMITS.MAX_REBUILD_BYTES) {
     offset = st.size - LIMITS.MAX_REBUILD_BYTES;
@@ -679,19 +687,28 @@ function rebuild(fd, st) {
   sendHistory();
 }
 
-// Reads [from, to), feeds complete lines through the parser. Returns bytes
-// actually consumed so a short read is retried on the next poll.
+// Reads [from, to) in fixed-size chunks, feeding each chunk's complete lines
+// through the parser, so a large backlog never becomes a single allocation
+// (callers cap the range at MAX_REBUILD_BYTES). Returns bytes actually
+// consumed so a short read is retried on the next poll.
 function readRange(fd, from, to) {
   const len = to - from;
   if (len <= 0) return 0;
-  const buf = Buffer.alloc(len);
+  const chunk = Buffer.alloc(Math.min(READ_CHUNK, len));
   let read = 0;
   while (read < len) {
-    const n = fs.readSync(fd, buf, read, len - read, from + read);
+    const want = Math.min(chunk.length, len - read);
+    const n = fs.readSync(fd, chunk, 0, want, from + read);
     if (n <= 0) break;
     read += n;
+    feedLines(follower.lineBuf.push(chunk.subarray(0, n)));
   }
-  const lines = follower.lineBuf.push(read === len ? buf : buf.subarray(0, read));
+  follower.messages = trimToTurns(follower.messages);
+  markStalePending(follower.messages);
+  return read;
+}
+
+function feedLines(lines) {
   for (const line of lines) {
     const opts = {
       includeUser: INCLUDE_USER,
@@ -709,9 +726,6 @@ function readRange(fd, from, to) {
     }
     applyToolResults(follower.messages, r.results);
   }
-  follower.messages = trimToTurns(follower.messages);
-  markStalePending(follower.messages);
-  return read;
 }
 
 // ---------------------------------------------------------------- webview out
@@ -749,12 +763,18 @@ function sendHistory() {
         )
       : [],
     status: f ? f.status : '',
-    notice:
+    notice: [
       f && f.unexpected
         ? `Some records were skipped — ${
             f.source === 'codex' ? 'Codex CLI' : 'Claude Code'
           } transcript format may have changed.`
         : '',
+      f && f.skippedBytes
+        ? 'The transcript grew faster than it could be followed — an older stretch was skipped.'
+        : '',
+    ]
+      .filter(Boolean)
+      .join(' '),
   });
 }
 
