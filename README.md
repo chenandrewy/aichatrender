@@ -32,10 +32,22 @@ a terminal is unreadable, and copying an equation out of one is worse.
   the rendering rather than the rendering itself, which is the only way to find
   a symbol by name: the panel draws `\theta` as θ, so no search of the displayed
   text can match `\theta`. Enter a query, and the matching lines are listed one
-  per line with their turn number and role; picking one scrolls the panel there
-  and flashes it, as the turn picker does. Matching is case-insensitive
-  substring, not regular expression. Tool calls are not searched — their output
-  reaches the panel as ordinary text, where the find widget already covers it.
+  per line with their turn number and role. Moving through the results previews
+  each hit in the panel; Enter keeps the chosen position, while Escape returns
+  the panel to where it was before the result picker opened.
+  **Browse Turns and Pick** does not preview while moving through its list; it
+  still scrolls and flashes only after a turn is picked. Matching is
+  case-insensitive substring, not regular expression. Tool calls are not
+  searched — their output reaches the panel as ordinary text, where the find
+  widget already covers it.
+  Formulas whose source matched are **outlined and highlighted**, and the panel
+  scrolls to the first rather than to the top of the message, so a hit is
+  findable once you arrive. The whole formula is highlighted, not the symbol
+  within it: KaTeX renders an expression as a tree of positioned spans, and no
+  element there stands for a single symbol. A query matching only prose
+  highlights nothing and flashes the message instead — displayed text is what
+  the find widget already covers. Highlights stay up until the next jump, and a
+  live update to the chat clears them.
   Bound to `Cmd+Shift+F` (`Ctrl+Shift+F`) **while the panel is focused only**,
   so it never displaces Find in Files anywhere else. To reach it from the editor
   or terminal, use the palette, or bind it yourself without the `when` clause.
