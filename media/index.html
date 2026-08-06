@@ -99,7 +99,7 @@
     opacity: 0.45;
   }
   @keyframes aicr-flash {
-    from { background: var(--vscode-editor-findMatchHighlightBackground, rgba(255, 200, 0, 0.45)); }
+    from { background: rgba(255, 215, 0, 0.55); }
     to { background: transparent; }
   }
   article.flash {
@@ -107,6 +107,12 @@
   }
   @media (prefers-reduced-motion: reduce) {
     article.flash { animation-duration: 0.01s; }
+  }
+  .math.hit {
+    border-radius: 3px;
+    outline: 2px solid rgba(255, 215, 0, 0.9);
+    outline-offset: 2px;
+    background: rgba(255, 215, 0, 0.55);
   }
   article header {
     font-size: 0.85em;
@@ -237,6 +243,7 @@
   var statusEl = document.getElementById('status');
   var noticeEl = document.getElementById('notice');
   var turnIndexEl = document.getElementById('turn-index');
+  var previewAnchor;
 
   function validSpan(s) {
     if (!s || typeof s !== 'object' || typeof s.s !== 'string') return false;
@@ -293,9 +300,13 @@
     if (from < text.length) parent.appendChild(document.createTextNode(text.slice(from)));
   }
 
+  // The TeX is kept on the element because rendering consumes it: `\theta`
+  // reaches the DOM as θ, so a hit the source search found has nothing in the
+  // displayed text to point at. This gives the highlight something to match on.
   function appendMath(parent, span) {
     var el = document.createElement(span.m === 'display' ? 'div' : 'span');
     el.className = 'math ' + span.m;
+    el.dataset.tex = span.s;
     try {
       katex.render(span.s, el, {
         displayMode: span.m === 'display',
@@ -542,22 +553,116 @@
     }
   });
 
+  function clearHits() {
+    var marked = log.querySelectorAll('.math.hit');
+    for (var i = 0; i < marked.length; i++) marked[i].classList.remove('hit');
+  }
+
+  // Highlights the formulas inside `target` whose source contains `query`, and
+  // returns the first, so a hit can be scrolled to directly rather than the top
+  // of a message that may run for pages. A whole formula is the finest
+  // granularity available: KaTeX output is a tree of positioned spans, with no
+  // element standing for a single symbol within the expression.
+  //
+  // Prose is deliberately left alone. Displayed text is already covered by the
+  // find widget, and a source match can straddle Markdown punctuation that
+  // never reaches the DOM at all, so a prose highlight would miss hits the
+  // picker listed and quietly imply they were not really there.
+  function markMath(target, query) {
+    if (typeof query !== 'string' || !query) return undefined;
+    var needle = query.toLowerCase();
+    var maths = target.querySelectorAll('.math[data-tex]');
+    var first;
+    for (var i = 0; i < maths.length; i++) {
+      if (maths[i].dataset.tex.toLowerCase().indexOf(needle) === -1) continue;
+      maths[i].classList.add('hit');
+      if (!first) first = maths[i];
+    }
+    return first;
+  }
+
   // Scroll to the message the turn picker chose. Keys are assigned by the
   // extension and are stable across re-renders; a key that has since scrolled
   // out of the retained window simply finds nothing.
-  function gotoMessage(key) {
+  //
+  // With a query, the message's matching formulas are highlighted and the first
+  // is scrolled to. A query that matches only prose highlights nothing and falls
+  // back to the flash, which is also what the turn picker gets by passing none.
+  // Highlights persist until the next jump, so they can be read rather than
+  // caught; a live update clears them by rebuilding the log.
+  function gotoMessage(key, query) {
+    clearHits();
     if (typeof key !== 'number' || !isFinite(key)) return;
     var target = log.querySelector('article[data-key="' + String(key) + '"]');
     if (!target) return;
+    var hit = markMath(target, query);
+    if (hit) {
+      hit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     flash(target);
+  }
+
+  // Preserve a content-relative position because live updates replace every
+  // article and can change the pixel offset of the content below them.
+  function beginPreview() {
+    var articles = log.querySelectorAll('article[data-key]');
+    var scrollY = window.scrollY;
+    previewAnchor = { scrollY: scrollY };
+    for (var i = 0; i < articles.length; i++) {
+      var rect = articles[i].getBoundingClientRect();
+      if (rect.bottom <= 0 || rect.top >= window.innerHeight) continue;
+      var key = Number(articles[i].dataset.key);
+      if (isFinite(key)) {
+        previewAnchor = { key: key, offset: rect.top, scrollY: scrollY };
+      }
+      break;
+    }
+  }
+
+  // Previews highlight on the same terms as the jump, so moving through the
+  // result list shows each hit where it will land rather than the top of its
+  // message. Highlights are dropped when the preview ends; accepting a result
+  // re-marks them through gotoMessage.
+  function previewMessage(key, query) {
+    clearHits();
+    if (typeof key !== 'number' || !isFinite(key)) return;
+    var target = log.querySelector('article[data-key="' + String(key) + '"]');
+    if (!target) return;
+    var hit = markMath(target, query);
+    if (hit) {
+      hit.scrollIntoView({ behavior: 'auto', block: 'center' });
+      return;
+    }
+    target.scrollIntoView({ behavior: 'auto', block: 'start' });
+  }
+
+  function endPreview(restore) {
+    clearHits();
+    var anchor = previewAnchor;
+    previewAnchor = undefined;
+    if (!restore || !anchor) return;
+    if (typeof anchor.key === 'number' && isFinite(anchor.key)) {
+      var target = log.querySelector('article[data-key="' + String(anchor.key) + '"]');
+      if (target) {
+        window.scrollTo(0, target.getBoundingClientRect().top + window.scrollY - anchor.offset);
+        return;
+      }
+    }
+    if (typeof anchor.scrollY === 'number' && isFinite(anchor.scrollY)) {
+      window.scrollTo(0, anchor.scrollY);
+    }
   }
 
   window.addEventListener('message', function (ev) {
     var m = ev.data;
     if (!m) return;
     if (m.type === 'replaceHistory') render(m);
-    else if (m.type === 'gotoMessage') gotoMessage(m.key);
+    else if (m.type === 'gotoMessage') gotoMessage(m.key, m.query);
+    else if (m.type === 'beginPreview') beginPreview();
+    else if (m.type === 'previewMessage') previewMessage(m.key, m.query);
+    else if (m.type === 'endPreview') endPreview(m.restore === true);
   });
   vscodeApi.postMessage({ type: 'ready' });
 })();

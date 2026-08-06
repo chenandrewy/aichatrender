@@ -27,6 +27,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Find in the panel.** `Cmd+F` / `Ctrl+F` with the panel focused opens VS
+  Code's webview find widget, searching the rendered chat.
+- **AIChatRender: Search Chat Source** searches the Markdown and LaTeX as
+  written, so `\theta` finds math the panel renders as θ — which the find
+  widget cannot match, since the displayed text is the glyph. Hits are listed
+  with their turn number and role, windowed around the match, and picking one
+  scrolls the panel to it. Moving through the result list now previews each hit;
+  accepting keeps the chosen hit, while dismissing restores the panel's previous
+  content-relative scroll position. The turn picker remains commit-on-accept.
+  Formulas whose source matched are outlined and highlighted in the panel, and
+  the panel scrolls to the first rather than the message top — without that, a
+  `\theta` hit lands the reader in a wall of rendered symbols with nothing
+  marking what matched. The highlight covers the whole formula, since KaTeX
+  output has no element standing for a single symbol within an expression. A
+  match in prose highlights nothing and flashes the message, as before: prose is
+  what the find widget already covers. Tool entries are skipped: their text is
+  displayed as prose, so the find widget already reaches it. Bound to `Cmd+Shift+F` /
+  `Ctrl+Shift+F` while the panel holds focus, and only then — the binding is
+  scoped by `activeWebviewPanelId` so that Find in Files keeps the key
+  everywhere else.
 - **Claude Code and Codex CLI tool calls now appear in the panel**, shaped after
   the CLIs' own display: the tool and its primary argument on one line, the
   first few lines of

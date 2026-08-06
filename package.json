@@ -36,7 +36,8 @@
   "activationEvents": [
     "onCommand:aichatrender.show",
     "onCommand:aichatrender.followActiveChat",
-    "onCommand:aichatrender.browseTurns"
+    "onCommand:aichatrender.browseTurns",
+    "onCommand:aichatrender.searchSource"
   ],
   "contributes": {
     "commands": [
@@ -51,6 +52,18 @@
       {
         "command": "aichatrender.browseTurns",
         "title": "AIChatRender: Browse Turns and Pick"
+      },
+      {
+        "command": "aichatrender.searchSource",
+        "title": "AIChatRender: Search Chat Source"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "aichatrender.searchSource",
+        "key": "ctrl+shift+f",
+        "mac": "cmd+shift+f",
+        "when": "activeWebviewPanelId == 'aichatrender'"
       }
     ]
   },

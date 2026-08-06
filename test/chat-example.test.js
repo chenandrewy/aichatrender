@@ -16,13 +16,13 @@ const {
   selectFixture,
   sessionMetadata,
   stageFixture,
-} = require('../scripts/chat-example');
+} = require('../scripts/chat-example.js');
 
 test('chat examples expose stable provider-number selectors', () => {
   const items = fixtures();
   assert.deepEqual(
     items.map((item) => item.key),
-    ['claude1', 'claude2', 'codex1', 'codex2'],
+    ['claude1', 'claude2', 'claude3', 'codex1', 'codex2'],
   );
   assert.equal(selectFixture(items, 'tables').key, 'claude2');
   assert.equal(selectFixture(items, 'codex1').description, 'disc-sfs-branch');
@@ -70,7 +70,9 @@ test('Codex fixture stages today with normalized cwd and a fresh UUID', (t) => {
 });
 
 test('commands map fork and resume to each provider CLI', () => {
-  const [claude, , codex] = fixtures();
+  const items = fixtures();
+  const claude = selectFixture(items, 'claude1');
+  const codex = selectFixture(items, 'codex1');
   assert.deepEqual(commandFor(claude, 'fork', 'id', '/repo', []), {
     bin: 'claude',
     args: ['--resume', 'id', '--fork-session'],

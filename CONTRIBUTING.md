@@ -23,10 +23,10 @@ matters: `active-terminal.js` reads `/proc` on Linux and shells out to
 Resume a disposable copy of a chat example with its short prefix:
 
 ```sh
-npm run chat-example -- claude1
-npm run chat-example -- claude2
-npm run chat-example -- codex1
-npm run chat-example -- codex2
+scripts/chat-example claude1
+scripts/chat-example claude2
+scripts/chat-example codex1
+scripts/chat-example codex2
 ```
 
 Resuming is the default, and the staged transcript is removed when the CLI
@@ -34,10 +34,12 @@ exits. Use `fork` explicitly when testing fork behavior; that creates a new
 persistent chat. Omit the selector for an interactive picker:
 
 ```sh
-npm run chat-example -- fork claude2
-npm run chat-example
-npm run chat-example -- --list
+scripts/chat-example fork claude2
+scripts/chat-example
+scripts/chat-example --list
 ```
+
+The equivalent cross-platform form is `npm run chat-example -- <arguments>`.
 
 Every run gives its staged copy a fresh session ID and leaves the checked-in
 JSONL untouched. The staged seed is removed when the CLI exits; an explicitly

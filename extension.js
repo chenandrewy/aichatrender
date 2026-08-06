@@ -15,6 +15,7 @@ const {
   pathWithin,
   LineBuffer,
   turnPreview,
+  searchMessages,
   applyToolResults,
   markStalePending,
   trimToTurns,
@@ -41,7 +42,7 @@ const NO_SESSION = 'No Claude Code or Codex CLI session found for this workspace
 let panel; // singleton WebviewPanel
 let webviewReady = false;
 let follower; // transcript-follow state while the panel is open
-let pendingGoto; // message key to scroll to once the webview reports ready
+let pendingGoto; // { key, query } to scroll to once the webview reports ready
 
 function activate(context) {
   context.subscriptions.push(
@@ -50,6 +51,7 @@ function activate(context) {
       followActiveChat(context),
     ),
     vscode.commands.registerCommand('aichatrender.browseTurns', () => browseTurns(context)),
+    vscode.commands.registerCommand('aichatrender.searchSource', () => searchSource(context)),
   );
 }
 
@@ -68,6 +70,7 @@ function show(context, preserveFocus = false, preserveColumn = false) {
     { viewColumn: vscode.ViewColumn.Beside, preserveFocus },
     {
       enableScripts: true,
+      enableFindWidget: true,
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')],
     },
   );
@@ -78,7 +81,7 @@ function show(context, preserveFocus = false, preserveColumn = false) {
       if (m && m.type === 'ready') {
         webviewReady = true;
         sendHistory();
-        if (pendingGoto !== undefined) postGoto(pendingGoto);
+        if (pendingGoto !== undefined) postGoto(pendingGoto.key, pendingGoto.query);
       }
     },
     undefined,
@@ -231,15 +234,113 @@ async function browseTurns(context) {
   postGoto(picked.key);
 }
 
-function postGoto(key) {
+// Search the source behind the rendering, rather than the rendering. The panel's
+// own find widget (Cmd+F) covers displayed text, but it cannot match `\theta`,
+// because what is displayed there is θ. This walks the Markdown and LaTeX as
+// written. Moving through the results previews each hit in the panel; accepting
+// one keeps that position, while dismissing restores the reader's original
+// position. The panel highlights the formulas whose source matched, which is
+// what makes a hit findable once the panel has scrolled to it — a match on
+// `\theta` is invisible in a wall of rendered symbols otherwise.
+async function searchSource(context) {
+  show(context, true, true);
+  const messages = (follower && follower.messages) || [];
+  if (!messages.length) {
+    vscode.window.showInformationMessage(
+      follower && follower.status
+        ? `AIChatRender: ${follower.status}`
+        : 'AIChatRender: no chat is currently being followed.',
+    );
+    return;
+  }
+  const query = await vscode.window.showInputBox({
+    title: 'AIChatRender: Search Chat Source',
+    prompt: 'Matches Markdown and LaTeX as written, so \\theta finds math that renders as θ.',
+    placeHolder: '\\theta',
+  });
+  if (!query) return; // undefined when dismissed, '' when submitted empty
+  const { hits, truncated } = searchMessages(messages, query);
+  if (!hits.length) {
+    vscode.window.showInformationMessage(
+      `AIChatRender: no match for ${JSON.stringify(query)} in the chat being followed.`,
+    );
+    return;
+  }
+  const items = hits.map((h) => ({
+    label: h.preview,
+    description: `turn ${h.turn} · ${h.role}${h.ts ? ` · ${tsDisplay(h.ts)}` : ''}`,
+    key: h.key,
+  }));
+  const qp = vscode.window.createQuickPick();
+  qp.items = items;
+  qp.placeholder = truncated
+    ? `First ${items.length} matches — select one to scroll the panel to`
+    : `${items.length} match${items.length === 1 ? '' : 'es'} — select one to scroll the panel to`;
+  qp.matchOnDescription = true;
+
+  await new Promise((resolve) => {
+    let accepted = false;
+    let picked;
+    let previewTimer;
+    const subscriptions = [];
+
+    subscriptions.push(
+      qp.onDidChangeActive(([active]) => {
+        clearTimeout(previewTimer);
+        previewTimer = undefined;
+        if (!active) return;
+        previewTimer = setTimeout(() => {
+          previewTimer = undefined;
+          postPreview(active.key, query);
+        }, 50);
+      }),
+      qp.onDidAccept(() => {
+        picked = qp.selectedItems[0];
+        if (!picked) return;
+        accepted = true;
+        qp.hide();
+      }),
+      qp.onDidHide(() => {
+        clearTimeout(previewTimer);
+        postEndPreview(!accepted);
+        if (picked) postGoto(picked.key, query);
+        for (const subscription of subscriptions) subscription.dispose();
+        qp.dispose();
+        resolve();
+      }),
+    );
+
+    postBeginPreview();
+    qp.show();
+  });
+}
+
+function postBeginPreview() {
+  if (!panel) return;
+  panel.webview.postMessage({ type: 'beginPreview' });
+}
+
+function postPreview(key, query) {
+  if (!panel) return;
+  panel.webview.postMessage({ type: 'previewMessage', key, query });
+}
+
+function postEndPreview(restore) {
+  if (!panel) return;
+  panel.webview.postMessage({ type: 'endPreview', restore });
+}
+
+// `query` is carried through so the panel can highlight the formulas a source
+// search matched; the turn picker passes none and gets the plain jump.
+function postGoto(key, query) {
   if (!panel) return;
   if (!webviewReady) {
-    pendingGoto = key;
+    pendingGoto = { key, query };
     return;
   }
   pendingGoto = undefined;
   panel.reveal(undefined, true);
-  panel.webview.postMessage({ type: 'gotoMessage', key });
+  panel.webview.postMessage({ type: 'gotoMessage', key, query });
 }
 
 function buildHtml(context, webview) {

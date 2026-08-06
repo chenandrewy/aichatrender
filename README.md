@@ -28,6 +28,37 @@ a terminal is unreadable, and copying an equation out of one is worse.
   bounds rendered width, so wide characters count double). Picking one scrolls
   the panel to that turn and flashes it. The list covers the messages the panel
   currently holds, so it never offers a turn the panel cannot show.
+- **AIChatRender: Search Chat Source** searches the Markdown and LaTeX behind
+  the rendering rather than the rendering itself, which is the only way to find
+  a symbol by name: the panel draws `\theta` as θ, so no search of the displayed
+  text can match `\theta`. Enter a query, and the matching lines are listed one
+  per line with their turn number and role. Moving through the results previews
+  each hit in the panel; Enter keeps the chosen position, while Escape returns
+  the panel to where it was before the result picker opened.
+  **Browse Turns and Pick** does not preview while moving through its list; it
+  still scrolls and flashes only after a turn is picked. Matching is
+  case-insensitive substring, not regular expression. Tool calls are not
+  searched — their output reaches the panel as ordinary text, where the find
+  widget already covers it.
+  Formulas whose source matched are **outlined and highlighted**, and the panel
+  scrolls to the first rather than to the top of the message, so a hit is
+  findable once you arrive. The whole formula is highlighted, not the symbol
+  within it: KaTeX renders an expression as a tree of positioned spans, and no
+  element there stands for a single symbol. A query matching only prose
+  highlights nothing and flashes the message instead — displayed text is what
+  the find widget already covers. Highlights stay up until the next jump, and a
+  live update to the chat clears them.
+  Bound to `Cmd+Shift+F` (`Ctrl+Shift+F`) **while the panel is focused only**,
+  so it never displaces Find in Files anywhere else. To reach it from the editor
+  or terminal, use the palette, or bind it yourself without the `when` clause.
+- **Finds text in the panel.** With the panel focused, `Cmd+F` (`Ctrl+F` on
+  Windows and Linux) opens VS Code's find widget over the rendered chat, with
+  the usual next/previous and match count. It searches what is currently in the
+  panel; use **Browse Turns and Pick** to jump by prompt. Equations are searched
+  as rendered, not as source: `x` in `$x^2$` matches, but a symbol matches only
+  its rendered character — `θ`, not `\theta`. KaTeX does keep the original
+  LaTeX in a MathML annotation, but it is clip-hidden and the find widget skips
+  it.
 - **Renders math** with a vendored, pinned KaTeX: `$$…$$` and `\[…\]` display,
   `\(…\)` and `$…$` inline. Single-`$` uses Pandoc-style guards so currency and
   `$VAR` don't trigger false positives.
