@@ -2,7 +2,7 @@
   "name": "aichatrender",
   "displayName": "AIChatRender",
   "description": "Render Claude Code or Codex CLI session math live from transcripts (read-only, no network).",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "publisher": "chenandrewy",
   "license": "MIT",
   "repository": {
