@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the missing user records left the turn picker empty. Injected user-role
   context such as AGENTS.md remains excluded.
 
+### Changed
+
+- Marketplace listing: the extension description is now the README's opening
+  sentence, and `transcript` replaces `katex` in the keywords.
+
 ## [0.6.0] — 2026-08-06
 
 First release published to the VS Code Marketplace.
