@@ -1,7 +1,7 @@
 {
   "name": "aichatrender",
   "displayName": "AIChatRender",
-  "description": "Render Claude Code or Codex CLI session math live from transcripts (read-only, no network).",
+  "description": "Read your Claude Code or Codex CLI session in a VS Code panel, with the math nicely rendered.",
   "version": "0.6.1",
   "publisher": "chenandrewy",
   "license": "MIT",
@@ -20,10 +20,10 @@
   ],
   "keywords": [
     "math",
-    "katex",
     "latex",
     "claude code",
-    "codex"
+    "codex",
+    "transcript"
   ],
   "galleryBanner": {
     "color": "#1e1e1e",
