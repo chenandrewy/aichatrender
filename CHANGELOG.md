@@ -5,6 +5,16 @@ All notable changes to AIChatRender are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Browse Turns and Pick** again lists prompts from current Codex rollouts.
+  Codex 0.147 records real prompts as completed `UserMessage` items instead of
+  the older `user_message` events; assistant output continued to follow, but
+  the missing user records left the turn picker empty. Injected user-role
+  context such as AGENTS.md remains excluded.
+
 ## [0.6.0] — 2026-08-06
 
 First release published to the VS Code Marketplace.

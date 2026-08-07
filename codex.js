@@ -602,8 +602,11 @@ function imageEvent(rec, payload, opts, state) {
 }
 
 // Assistant text is present twice in current rollouts. response_item/message is
-// canonical; event_msg/agent_message is skipped. User prompts take the reverse
-// path so injected response-item context never appears as something typed.
+// canonical; event_msg/agent_message is skipped. Older Codex versions emit real
+// user prompts as event_msg/user_message. Newer versions put both injected
+// context and real prompts in response_item/message, then identify only the real
+// prompt with event_msg/item_completed/UserMessage; consume that completion so
+// AGENTS.md and environment context never appear as something the user typed.
 function parseRecord(rec, opts, state) {
   if (!rec || typeof rec !== 'object' || Array.isArray(rec)) {
     return { messages: [], unexpected: true };
@@ -666,6 +669,38 @@ function parseRecord(rec, opts, state) {
     return {
       messages: [makeMessage(rec, opts, 'user', payload.message)],
       unexpected: false,
+    };
+  }
+
+  if (
+    rec.type === 'event_msg' &&
+    payload &&
+    payload.type === 'item_completed' &&
+    payload.item &&
+    payload.item.type === 'UserMessage' &&
+    opts &&
+    opts.includeUser
+  ) {
+    if (!Array.isArray(payload.item.content)) {
+      return { messages: [], unexpected: true };
+    }
+    const texts = [];
+    let changedShape = false;
+    for (const item of payload.item.content) {
+      if (!item || typeof item !== 'object' || item.type !== 'text') {
+        changedShape = true;
+        continue;
+      }
+      if (typeof item.text !== 'string') {
+        changedShape = true;
+        continue;
+      }
+      if (item.text !== '') texts.push(item.text);
+    }
+    const text = texts.join('\n');
+    return {
+      messages: text.trim() === '' ? [] : [makeMessage(rec, opts, 'user', text)],
+      unexpected: changedShape,
     };
   }
 

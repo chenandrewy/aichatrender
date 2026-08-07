@@ -224,6 +224,41 @@ test('user: event user_message is kept only when enabled', () => {
   });
 });
 
+test('user: item_completed UserMessage supports current Codex rollouts', () => {
+  const injectedContext = line('response_item', {
+    type: 'message',
+    role: 'user',
+    content: [{ type: 'input_text', text: '# AGENTS.md instructions' }],
+  });
+  const completed = line(
+    'event_msg',
+    {
+      type: 'item_completed',
+      item: {
+        type: 'UserMessage',
+        id: 'user-1',
+        content: [{ type: 'text', text: 'Browse turn $x^2$.', text_elements: [] }],
+      },
+    },
+    '2026-08-07T12:38:46.812Z',
+  );
+
+  const enabled = parseSession([injectedContext, completed]);
+  assert.equal(enabled.unexpected, false);
+  assert.deepEqual(enabled.messages, [
+    {
+      ts: '2026-08-07T12:38:46.812Z',
+      role: 'user',
+      spans: [
+        { t: 'text', s: 'Browse turn ' },
+        { t: 'math', m: 'inline', s: 'x^2' },
+        { t: 'text', s: '.' },
+      ],
+    },
+  ]);
+  assert.equal(parseLine(completed, { includeUser: false }).messages.length, 0);
+});
+
 test('timestamps: missing per-record timestamp falls back to session metadata', () => {
   const r = parseLine(
     line('response_item', {
