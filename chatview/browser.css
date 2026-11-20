@@ -1,0 +1,54 @@
+:root {
+  color-scheme: light dark;
+  --vscode-font-size: 15px;
+  --vscode-font-family: system-ui, sans-serif;
+  --vscode-editor-foreground: CanvasText;
+  --vscode-editor-background: Canvas;
+  --vscode-foreground: CanvasText;
+  --vscode-editorWidget-background: Canvas;
+  --vscode-panel-border: color-mix(in srgb, CanvasText 24%, Canvas);
+  --vscode-charts-blue: LinkText;
+  --vscode-editorWarning-foreground: CanvasText;
+  --vscode-list-activeSelectionForeground: HighlightText;
+  --vscode-list-activeSelectionBackground: Highlight;
+}
+body {
+  max-width: 68rem;
+  margin-inline: auto;
+  line-height: 1.5;
+}
+.chatview-controls {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+  padding: .65rem 0;
+  margin-right: 3ch;
+  background: Canvas;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+.chatview-controls select,
+.chatview-controls button {
+  font: inherit;
+  min-width: 0;
+}
+.chatview-environment {
+  font-weight: 600;
+}
+.chatview-controls select {
+  flex: 1 1 15rem;
+  max-width: 100%;
+}
+#chatview-connection {
+  font-size: .85rem;
+}
+body:has(.chatview-controls) #turn-index {
+  top: 4rem;
+  max-height: calc(100vh - 4.6rem);
+}
+article {
+  scroll-margin-top: 5rem;
+}

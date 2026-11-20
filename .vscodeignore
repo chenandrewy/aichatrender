@@ -1,6 +1,11 @@
 # Tests and their sample transcripts are not needed at runtime.
 test/**
 
+# The browser viewer and the Acorn source it falls back to. The extension uses
+# Acorn from node_modules instead.
+chatview/**
+vendor/**
+
 # Editor and VCS noise.
 .vscode/**
 dev/**

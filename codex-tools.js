@@ -2,8 +2,20 @@
 // JavaScript syntax only: no expression from a rollout is evaluated or called.
 'use strict';
 
-const acorn = require('acorn');
-const walk = require('acorn-walk');
+// The extension ships Acorn as an npm dependency. The browser viewer
+// (chatview/) runs from a plain checkout without `npm install`, so it falls
+// back to the ES module source under vendor/, which needs Node 22.12+.
+function requireDependency(name) {
+  try {
+    return require(name);
+  } catch (error) {
+    if (error.code !== 'MODULE_NOT_FOUND') throw error;
+    return require('./vendor/' + name + '/index.js');
+  }
+}
+
+const acorn = requireDependency('acorn');
+const walk = requireDependency('acorn-walk');
 
 const CODEX_TOOL_LIMITS = {
   MAX_EXEC_SOURCE: 192 * 1024,

@@ -24,6 +24,9 @@ jobs:
       # runtime dependencies installed, not just a checkout.
       - run: npm ci
       - run: node --test test/*.test.js
+      # The browser viewer. `stop` uses Linux procps options, so Linux only.
+      - if: runner.os == 'Linux'
+        run: node --test chatview/test/*.test.js
 
   package:
     runs-on: ubuntu-latest

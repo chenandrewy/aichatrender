@@ -9,6 +9,14 @@ nicely rendered. Scroll back, browse turns, while you compose your next response
 > endorsed, or supported by Anthropic or OpenAI. It reads the session files
 > those CLIs already write to your own disk; it uses no API and no account.
 
+## Browser viewer
+
+This repository also holds **chatview**, a browser version of the same
+renderer that needs no VS Code. It serves the local Claude Code and Codex
+sessions over HTTP; pick a session in the page and it follows it live. See
+[chatview/README.md](chatview/README.md). New work happens there; the VS Code
+extension is maintenance-only.
+
 ## Requirements
 
 - **Claude Code or Codex CLI**, run from this workspace. AIChatRender reads the

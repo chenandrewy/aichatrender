@@ -5,6 +5,22 @@ All notable changes to AIChatRender are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **chatview**, a browser viewer under `chatview/` that renders live Claude
+  Code and Codex sessions without VS Code. It shares the parsers and
+  `media/index.html` with the extension. Not part of the extension package.
+
+### Changed
+
+- `media/index.html` keeps the reader's position on live redraws, jumps
+  instantly when navigating turns, and accepts a browser adapter in place of
+  the VS Code webview API.
+- `codex-tools.js` falls back to the Acorn source under `vendor/` when the npm
+  package is not installed (used by chatview; needs Node 22.12+).
+
 ## [0.6.1] — 2026-08-07
 
 ### Fixed
