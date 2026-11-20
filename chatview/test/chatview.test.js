@@ -143,8 +143,11 @@ test('requires credentials on every route and invalidates the URL and cookie on 
   const base = 'http://127.0.0.1:' + localPort;
   const host = '127.0.0.1:17711';
   // Fetch can replace the Host header. Send it directly to exercise the check.
-  async function request(route, headers) {
-    const req = http.get(base + route, { headers });
+  // agent: false opens a fresh connection per request. A pooled keep-alive
+  // socket would still point at the stopped server after the restart below,
+  // and Node 22 fails the request instead of reconnecting.
+  async function request(route, headers = {}) {
+    const req = http.get(base + route, { headers, agent: false });
     const [response] = await once(req, 'response');
     response.setEncoding('utf8');
     let body = '';
@@ -158,7 +161,7 @@ test('requires credentials on every route and invalidates the URL and cookie on 
     assert.equal(denied.headers['set-cookie'], undefined);
   }
   for (const invalid of ['short', '0'.repeat(32)]) {
-    const denied = await fetch(base + '/?t=' + invalid, { headers: { Cookie: 'chatview=' + invalid } });
+    const denied = await request('/?t=' + invalid, { Cookie: 'chatview=' + invalid });
     assert.equal(denied.status, 403);
   }
 
@@ -173,9 +176,9 @@ test('requires credentials on every route and invalidates the URL and cookie on 
 
   await stop();
   const restarted = await startViewer(t, localPort, 17711);
-  assert.equal((await fetch(base + '/' + printedUrl.search)).status, 403);
-  assert.equal((await fetch(base + '/', { headers: { Cookie: cookie } })).status, 403);
-  assert.equal((await fetch(base + '/' + restarted.printedUrl.search)).status, 200);
+  assert.equal((await request('/' + printedUrl.search)).status, 403);
+  assert.equal((await request('/', { Cookie: cookie })).status, 403);
+  assert.equal((await request('/' + restarted.printedUrl.search)).status, 200);
 });
 
 test('serves the browser shell and follows complete JSONL records across writes and reconnects', { timeout: 8000 }, async (t) => {
