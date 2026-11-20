@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Run: node chatview/server.js start | node chatview/server.js stop
+// Run: chatview/bin/chatview start | chatview/bin/chatview stop
+//   (the wrapper passes this file's absolute path, which `stop` matches)
 // Inputs: Claude and Codex JSONL in their local session stores
 //   ($CLAUDE_CONFIG_DIR or ~/.claude, $CODEX_HOME or ~/.codex).
 // Output: an HTTP/SSE browser viewer or its shutdown status.
@@ -231,12 +232,13 @@ async function main(args) {
   } else if (args.length === 1 && START_COMMANDS.includes(args[0])) {
     const port = tcpPort('CHATVIEW_PORT', DEFAULT_PORT);
     const hostPort = tcpPort('CHATVIEW_HOST_PORT', port);
+    const bind = process.env.CHATVIEW_BIND || DEFAULT_BIND;
     serve(port, hostPort, (url) => {
       console.log('Open ' + url + ' in your browser. Press Ctrl-C or run chatview stop to stop.');
-    }).on('error', (error) => {
+    }, bind).on('error', (error) => {
       console.error('chatview:', error.message);
       process.exitCode = 1;
-    }, process.env.CHATVIEW_BIND || DEFAULT_BIND);
+    });
   } else if (args.length === 1 && args[0] === 'stop') {
     await stopViewer();
   } else {

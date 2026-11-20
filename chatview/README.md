@@ -9,12 +9,15 @@ the CLIs already write and needs no VS Code, no API and no `npm install`.
 Needs Node 22.12 or newer, on Linux. From the repository root:
 
 ```sh
-node chatview/server.js start
+chatview/bin/chatview start
 ```
 
 Open the printed URL, pick a session, and use **Refresh** to find new ones.
-Stop with Ctrl-C, or `node chatview/server.js stop` from another terminal.
-`stop` uses Linux `pkill`/`pgrep` options and does not yet work on macOS.
+Stop with Ctrl-C, or `chatview/bin/chatview stop` from another terminal. Put
+`chatview/bin` on your `PATH` (or symlink the script) to run it as `chatview`.
+`stop` finds the viewer by the absolute path of `server.js`, which the wrapper
+passes; a viewer started as `node chatview/server.js` cannot be stopped that
+way. `stop` uses Linux `pkill`/`pgrep` options and does not yet work on macOS.
 
 Sessions come from `$CLAUDE_CONFIG_DIR` (default `~/.claude`) and
 `$CODEX_HOME` (default `~/.codex`).

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Run: chatview/bin/chatview start | chatview/bin/chatview stop
+#   (or put chatview/bin on PATH, or symlink this file into it)
+# Inputs: local Claude and Codex session JSONL; settings in chatview/README.md.
+# Output: a live browser viewer or its shutdown status.
+# Passes server.js by absolute path, which `stop` needs to find the viewer.
+set -euo pipefail
+self="$(realpath -- "${BASH_SOURCE[0]}")"
+exec node "$(realpath -- "$(dirname -- "$self")/../server.js")" "$@"
