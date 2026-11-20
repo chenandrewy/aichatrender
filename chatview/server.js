@@ -5,7 +5,7 @@
 //   ($CLAUDE_CONFIG_DIR or ~/.claude, $CODEX_HOME or ~/.codex).
 // Output: an HTTP/SSE browser viewer or its shutdown status.
 // Environment (all optional):
-//   CHATVIEW_PORT       port to listen on (default 7710)
+//   CHATVIEW_PORT       port to listen on (default 7710; 0 picks a free one)
 //   CHATVIEW_BIND       address to listen on (default 127.0.0.1; use 0.0.0.0
 //                       inside a container whose port is published)
 //   CHATVIEW_HOST_PORT  port shown in the printed URL when it differs from the
@@ -194,9 +194,15 @@ function serve(port, hostPort, onReady = () => {}, bind = DEFAULT_BIND) {
 }
 
 async function stopViewer() {
+  // Find viewers started from this checkout by their full command line. Only
+  // short options that procps (Linux) and BSD (macOS) pgrep/pkill share:
+  // -u effective user, -f match the argument list, -x match it exactly. The
+  // pattern is a POSIX ERE, so no \s or \S. `node` may appear bare or as a
+  // path, depending on how the launcher found it.
   const escapePattern = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const command = `(node|${escapePattern(process.execPath)}) ${escapePattern(__filename)} (${START_COMMANDS.join('|')})`;
-  const match = ['--euid', String(process.geteuid()), '--full', '--exact', '--', command];
+  const node = `(([^ ]*/)?node|${escapePattern(process.execPath)})`;
+  const command = `${node} ${escapePattern(__filename)} (${START_COMMANDS.join('|')})`;
+  const match = ['-u', String(process.geteuid()), '-f', '-x', '--', command];
 
   function matches(tool, options = []) {
     const result = spawnSync(tool, [...options, ...match], { encoding: 'utf8' });
@@ -206,7 +212,7 @@ async function stopViewer() {
     throw new Error(result.stderr.trim() || `${tool} could not check the viewer process.`);
   }
 
-  if (!matches('pkill', ['--signal', 'TERM'])) {
+  if (!matches('pkill', ['-TERM'])) {
     console.log('No chat viewer is running from this checkout.');
     return;
   }
@@ -218,9 +224,9 @@ async function stopViewer() {
   console.log('Stopped the chat viewer.');
 }
 
-function tcpPort(name, fallback) {
+function tcpPort(name, fallback, { allowAny = false } = {}) {
   const port = Number(process.env[name] ?? fallback);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  if (!Number.isInteger(port) || port < (allowAny ? 0 : 1) || port > 65535) {
     throw new Error(name + ' must be a valid TCP port.');
   }
   return port;
@@ -230,8 +236,9 @@ async function main(args) {
   if (args.length === 1 && ['--help', '-h'].includes(args[0])) {
     console.log(USAGE);
   } else if (args.length === 1 && START_COMMANDS.includes(args[0])) {
-    const port = tcpPort('CHATVIEW_PORT', DEFAULT_PORT);
-    const hostPort = tcpPort('CHATVIEW_HOST_PORT', port);
+    // CHATVIEW_PORT=0 picks a free port; the printed URL then shows it.
+    const port = tcpPort('CHATVIEW_PORT', DEFAULT_PORT, { allowAny: true });
+    const hostPort = process.env.CHATVIEW_HOST_PORT === undefined ? undefined : tcpPort('CHATVIEW_HOST_PORT');
     const bind = process.env.CHATVIEW_BIND || DEFAULT_BIND;
     serve(port, hostPort, (url) => {
       console.log('Open ' + url + ' in your browser. Press Ctrl-C or run chatview stop to stop.');

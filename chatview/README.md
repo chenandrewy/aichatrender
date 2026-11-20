@@ -6,7 +6,7 @@ the CLIs already write and needs no VS Code, no API and no `npm install`.
 
 ## Run
 
-Needs Node 22.12 or newer, on Linux. From the repository root:
+Needs Node 22.12 or newer, on Linux or macOS. From the repository root:
 
 ```sh
 chatview/bin/chatview start
@@ -17,7 +17,7 @@ Stop with Ctrl-C, or `chatview/bin/chatview stop` from another terminal. Put
 `chatview/bin` on your `PATH` (or symlink the script) to run it as `chatview`.
 `stop` finds the viewer by the absolute path of `server.js`, which the wrapper
 passes; a viewer started as `node chatview/server.js` cannot be stopped that
-way. `stop` uses Linux `pkill`/`pgrep` options and does not yet work on macOS.
+way.
 
 Sessions come from `$CLAUDE_CONFIG_DIR` (default `~/.claude`) and
 `$CODEX_HOME` (default `~/.codex`).
@@ -28,7 +28,7 @@ All optional environment variables:
 
 | Variable             | Default     | Purpose                                                                         |
 | -------------------- | ----------- | ------------------------------------------------------------------------------- |
-| `CHATVIEW_PORT`      | `7710`      | Port to listen on.                                                              |
+| `CHATVIEW_PORT`      | `7710`      | Port to listen on; `0` picks a free one.                                        |
 | `CHATVIEW_BIND`      | `127.0.0.1` | Address to listen on. Use `0.0.0.0` inside a container whose port is published. |
 | `CHATVIEW_HOST_PORT` | the port    | Port shown in the printed URL, e.g. behind a Docker port mapping.               |
 | `CHATVIEW_LABEL`     | none        | Short text shown in the page header, e.g. which machine is serving.             |
