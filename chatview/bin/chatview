@@ -3,7 +3,15 @@
 #   (or put chatview/bin on PATH, or symlink this file into it)
 # Inputs: local Claude and Codex session JSONL; settings in chatview/README.md.
 # Output: a live browser viewer or its shutdown status.
-# Passes server.js by absolute path, which `stop` needs to find the viewer.
+# Passes server.js by its resolved absolute path, which `stop` matches against
+# the running viewer. Uses readlink and pwd -P rather than realpath, which
+# older macOS lacks.
 set -euo pipefail
-self="$(realpath -- "${BASH_SOURCE[0]}")"
-exec node "$(realpath -- "$(dirname -- "$self")/../server.js")" "$@"
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+    dir="$(cd -P -- "$(dirname -- "$src")" && pwd)"
+    src="$(readlink -- "$src")"
+    case "$src" in /*) ;; *) src="$dir/$src" ;; esac
+done
+app="$(cd -P -- "$(dirname -- "$src")/.." && pwd)"
+exec node "$app/server.js" "$@"

@@ -76,7 +76,9 @@ async function startViewer(t, port = 0, hostPort) {
 async function checkStop(t, command) {
   // Use a separate checkout path and an ephemeral port so this test cannot
   // stop a viewer the user is running.
-  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'chatview-stop.'));
+  // realpath: on macOS os.tmpdir() is under /var, a symlink to /private/var,
+  // and the stopping process matches its own resolved __filename.
+  const temporary = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'chatview-stop.')));
   const checkout = path.join(temporary, 'aichatrender');
   const skip = new Set(['.git', 'node_modules']);
   fs.cpSync(path.join(__dirname, '..', '..'), checkout, {
@@ -86,10 +88,11 @@ async function checkStop(t, command) {
   const startCheck = spawnSync(process.execPath, [script, command], {
     encoding: 'utf8', timeout: 2000, env: { ...process.env, CHATVIEW_HOST_PORT: 'invalid' },
   });
-  const viewer = spawn(process.execPath, ['-e', `
-    process.title = ${JSON.stringify(`${process.execPath} ${script} ${command}`)};
-    require(${JSON.stringify(script)}).serve(0, undefined, (url) => console.log(new URL(url).port));
-  `], { stdio: ['ignore', 'pipe', 'inherit'] });
+  // Launch the real command on a free port. (Rewriting process.title to fake
+  // the command line does not change what pgrep sees on macOS.)
+  const viewer = spawn(process.execPath, [script, command], {
+    stdio: ['ignore', 'pipe', 'inherit'], env: { ...process.env, CHATVIEW_PORT: '0' },
+  });
   const exited = once(viewer, 'exit');
   t.after(async () => {
     viewer.kill();
@@ -99,8 +102,12 @@ async function checkStop(t, command) {
   assert.equal(startCheck.status, 1);
   assert.match(startCheck.stderr, /CHATVIEW_HOST_PORT must be a valid TCP port/);
   const [chunk] = await once(viewer.stdout, 'data', { signal: t.signal });
-  const url = 'http://127.0.0.1:' + String(chunk).trim();
+  const printed = new URL(/http:\/\/\S+/.exec(String(chunk))[0]);
+  const url = printed.origin + '/';
   assert.equal((await fetch(url)).status, 403);
+  const page = await fetch(printed);
+  assert.equal(page.status, 200);
+  await page.text();
 
   const stop = () => spawnSync(process.execPath, [script, 'stop'], { encoding: 'utf8', timeout: 7000 });
   const result = stop();

@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `codex-tools.js` falls back to the Acorn source under `vendor/` when the npm
   package is not installed (used by chatview; needs Node 22.12+).
 
+### Fixed
+
+- `chatview stop` works on macOS. It now uses only the `pgrep`/`pkill` options
+  that procps and BSD share, and the `chatview/bin/chatview` wrapper no longer
+  needs `realpath`. `CHATVIEW_PORT=0` picks a free port.
+
 ## [0.6.1] — 2026-08-07
 
 ### Fixed
